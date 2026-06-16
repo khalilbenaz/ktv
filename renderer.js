@@ -236,6 +236,78 @@ async function loadEpg(streamId) {
   } catch { /* EPG indisponible : on ignore */ }
 }
 
+/* ---------- Guide des programmes (grille EPG) ---------- */
+const EPG_MAX = 300;            // limite de chaînes scannées (perf)
+let epgGuideToken = 0;
+
+async function openEpgGuide() {
+  $('epgModal').classList.remove('hidden');
+  await buildEpgGuide();
+}
+
+async function buildEpgGuide() {
+  const token = ++epgGuideToken;
+  const ul = $('epgList');
+  const all = state.channels || [];
+  const list = all.slice(0, EPG_MAX);
+  $('epgHint').textContent = all.length > EPG_MAX
+    ? `${EPG_MAX} premières chaînes sur ${all.length} (affine la catégorie/recherche)`
+    : `${all.length} chaîne(s)`;
+  ul.innerHTML = '';
+
+  // crée les lignes (EPG "chargement…"), puis remplit en parallèle limité
+  const rows = list.map((c) => {
+    const li = document.createElement('li');
+    li.className = 'epg-item';
+    li.dataset.name = (c.name || '').toLowerCase();
+    li.innerHTML =
+      `<img src="${escapeHtml(c.stream_icon || '')}">` +
+      `<div class="epg-col"><span class="epg-ch">${escapeHtml(c.name || ('Chaîne ' + c.stream_id))}</span>` +
+      `<span class="epg-now">…</span>` +
+      `<div class="epg-bar"><i></i></div>` +
+      `<span class="epg-next"></span></div>`;
+    const im = li.querySelector('img');
+    im.onerror = () => { im.style.visibility = 'hidden'; };
+    li.onclick = () => { play(c); $('epgModal').classList.add('hidden'); };
+    ul.appendChild(li);
+    return { c, li };
+  });
+  if (!rows.length) { ul.innerHTML = '<li class="rec-empty">Aucune chaîne dans cette sélection.</li>'; return; }
+
+  // pool de concurrence
+  let idx = 0;
+  const worker = async () => {
+    while (idx < rows.length) {
+      if (token !== epgGuideToken) return; // guide fermé/rafraîchi
+      const { c, li } = rows[idx++];
+      await fillEpgRow(c, li);
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, worker));
+}
+
+async function fillEpgRow(c, li) {
+  const nowEl = li.querySelector('.epg-now');
+  const nextEl = li.querySelector('.epg-next');
+  const bar = li.querySelector('.epg-bar');
+  const fill = li.querySelector('.epg-bar i');
+  try {
+    const data = await xtreamApi('action=get_short_epg&stream_id=' + c.stream_id + '&limit=2');
+    const l = (data && data.epg_listings) || [];
+    if (!l.length) { nowEl.textContent = 'Pas de programme'; nowEl.classList.add('muted'); bar.style.display = 'none'; return; }
+    const t = (s) => { const d = new Date((Number(s) || 0) * 1000); return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
+    const st = Number(l[0].start_timestamp) || 0, en = Number(l[0].stop_timestamp) || 0;
+    nowEl.textContent = `${t(st)} ${decodeEpg(l[0].title)}`;
+    if (l[1]) nextEl.textContent = `⏭ ${t(l[1].start_timestamp)} ${decodeEpg(l[1].title)}`;
+    // progression
+    const now = Date.now() / 1000;
+    if (en > st && now >= st && now <= en) { fill.style.width = Math.round(((now - st) / (en - st)) * 100) + '%'; }
+    else { bar.style.display = 'none'; }
+  } catch {
+    nowEl.textContent = 'EPG indisponible'; nowEl.classList.add('muted'); bar.style.display = 'none';
+  }
+}
+
 function play(channel) {
   state.current = channel;
   $('nowTitle').textContent = channel.name || ('Chaîne ' + channel.stream_id);
@@ -497,6 +569,16 @@ window.addEventListener('DOMContentLoaded', () => {
   $('recSearch').addEventListener('input', (e) => { recView.q = e.target.value; recView.page = 1; renderRecPage(); });
   $('toggleSidebar').onclick = () => $('app').classList.toggle('collapsed');
   $('infoBtn').onclick = showInfo;
+  $('guideBtn').onclick = openEpgGuide;
+  $('epgClose').onclick = () => { epgGuideToken++; $('epgModal').classList.add('hidden'); };
+  $('epgModal').onclick = (e) => { if (e.target.id === 'epgModal') { epgGuideToken++; $('epgModal').classList.add('hidden'); } };
+  $('epgRefresh').onclick = buildEpgGuide;
+  $('epgSearch').addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('#epgList .epg-item').forEach((li) => {
+      li.style.display = (!q || li.dataset.name.includes(q)) ? '' : 'none';
+    });
+  });
   $('relayBtn').onclick = toggleRelay;
   $('relayClose').onclick = () => $('relayModal').classList.add('hidden');
   $('relayCopy').onclick = async () => {
