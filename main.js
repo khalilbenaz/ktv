@@ -121,14 +121,13 @@ const XMLTV_DEFAULT = [
 ];
 const xmltv = { index: new Map(), loadedAt: 0, loading: null };
 
+const SUP_DIGITS = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+const XMLTV_NOISE = new Set(['hd','fhd','uhd','sd','4k','8k','hevc','h265','h264','raw','backup','vip','multi','full','plus','digital','mono','stereo','english','french','arabic','arabe','ar','en','fr','tr','hq','channel','tv','live','d']);
 function xmlNorm(s) {
-  return String(s || '')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')      // accents
-    .toLowerCase()
-    .replace(/\b(fr|ar|en|tr|ma|us|uk)\s*\|/g, '')                    // préfixes "FR|"
-    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹ᴴᴰᵁᴷᶠˢᴾ]/g, '')                              // exposants unicode
-    .replace(/\b(4k|8k|uhd|fhd|hd|sd|hevc|h265|h264|raw|backup|vip|multi|full|plus)\b/g, '')
-    .replace(/[^a-z0-9]+/g, '');                                      // alphanum only
+  const x = String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (m) => SUP_DIGITS.indexOf(m))
+    .replace(/[ᴴᴰᵁᴷᶠˢᴾ]/g, ' ');
+  return x.split(/[^a-z0-9]+/).filter((t) => t && !XMLTV_NOISE.has(t)).join('');
 }
 function decodeEntities(s) {
   return String(s || '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
