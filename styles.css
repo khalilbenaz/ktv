@@ -100,6 +100,17 @@ input, button, select { font-family: inherit; font-size: 14px; outline: none; }
 #view-player.view.active { display: flex; }
 .loading { color: var(--muted); padding: 40px 6px; text-align: center; font-size: 14px; }
 
+/* Panneaux pleine page (Enregistrements, Réglages) */
+.view-panel { max-width: 760px; margin: 0 auto; }
+.view-h { font-size: 20px; margin-bottom: 14px; }
+.view-panel .row { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.view-panel .k { color: var(--muted); }
+.view-panel .v { font-weight: 600; text-align: right; word-break: break-all; }
+.view-panel .v.ok { color: #4dd080; }
+.view-panel .v.bad { color: var(--rec); }
+.view-panel .hint { color: var(--muted); font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
+.view-panel .rec-list { max-height: none; }
+
 /* SUBBAR */
 .subbar { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
 .subbar select {
@@ -112,12 +123,14 @@ input, button, select { font-family: inherit; font-size: 14px; outline: none; }
 /* HOME ROWS */
 .rows { display: flex; flex-direction: column; gap: 30px; }
 .home-row h2 { font-size: 17px; margin-bottom: 13px; }
-.track { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+.track { display: flex; align-items: flex-start; gap: 14px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
 .track::-webkit-scrollbar { height: 7px; }
 .track::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 .track .loading { padding: 30px; }
 .track .chan-card { flex: 0 0 250px; }
 .track .poster { flex: 0 0 150px; }
+/* affiches de taille identique dans les rangées (largeur fixe -> hauteur fixe) */
+.track .poster .p-img { aspect-ratio: auto; width: 150px; height: 225px; }
 
 /* HERO */
 .hero { position: relative; height: 260px; border-radius: 18px; overflow: hidden; background: linear-gradient(120deg, #2a1206, #3a1a08 40%, #10121a); }

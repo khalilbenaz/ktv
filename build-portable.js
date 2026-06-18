@@ -12,6 +12,7 @@ packager({
   name: 'IPTV Live',
   appBundleId: 'com.b3g.iptvlive',
   appVersion: require('./package.json').version,
+  icon: 'build/icon',
   platform,
   arch,
   out: 'portable',

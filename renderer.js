@@ -14,6 +14,22 @@ function categoryAllowed(name) {
   return false;
 }
 
+// Films / séries : ne garder que les catégories françaises
+function frCategoryAllowed(name) {
+  const n = (name || '').toUpperCase().trim();
+  return n.startsWith('FR|') || n.startsWith('FR ') || n.startsWith('FR-') || n.startsWith('FR_') || n === 'FR'
+    || n.includes('FRANCE') || n.includes('FRENCH') || n.includes('FRANÇAIS') || n.includes('VOSTFR') || n.includes('TRUEFRENCH');
+}
+
+// Détecte les fausses entrées (séparateurs "###", titres de section, symboles seuls)
+function isJunkChannel(c) {
+  const n = (c && c.name || '').trim();
+  if (!n) return true;
+  if (n.includes('##') || n.includes('===') || n.includes('▬') || n.includes('●●')) return true;
+  if (!/[A-Za-z0-9À-ÿ؀-ۿ]/.test(n)) return true; // que des symboles
+  return false;
+}
+
 const state = {
   srv: '', usr: '', pwd: '',
   categories: [],
@@ -137,8 +153,9 @@ async function connect() {
 
 function updateAcctChip() {
   const ui = (state.info && state.info.user_info) || {};
-  const active = ui.active_cons || 0, max = ui.max_connections || '—';
-  $('acctTxt').textContent = (ui.status === 'Active' || !ui.status) ? `Compte actif · ${active}/${max}` : (ui.status || '—');
+  if (ui.status && ui.status !== 'Active') { $('acctTxt').textContent = ui.status; return; }
+  const exp = ui.exp_date ? `expire le ${fmtDate(ui.exp_date)}` : 'illimité';
+  $('acctTxt').textContent = `Compte actif · ${exp}`;
 }
 
 async function loadCategories() {
@@ -177,6 +194,8 @@ function showView(name) {
   else if (name === 'movies') ensureVod();
   else if (name === 'series') ensureSeries();
   else if (name === 'guide') ensureGuide();
+  else if (name === 'recordings') loadRecordings();
+  else if (name === 'settings') buildSettings();
 }
 
 function onSearch() {
@@ -206,7 +225,7 @@ async function loadChannels(catId) {
 function filteredChannels() {
   const q = $('search').value.trim().toLowerCase();
   const qual = $('qualSelect').value;
-  let items = state.channels;
+  let items = state.channels.filter((c) => !isJunkChannel(c));
   if (q) items = items.filter((c) => (c.name || '').toLowerCase().includes(q));
   if (qual) items = items.filter((c) => detectQuality(c.name) === qual);
   return items;
@@ -323,18 +342,21 @@ async function fillCardEpg(card) {
 }
 
 /* ---------- FILMS (VOD) ---------- */
+// Charge films FR (catégories + streams) une seule fois.
+async function loadVodData() {
+  if (state.vod) return;
+  const cats = await xtreamApi('action=get_vod_categories');
+  state.vodCats = (Array.isArray(cats) ? cats : []).filter((c) => frCategoryAllowed(c.category_name));
+  const allowed = new Set(state.vodCats.map((c) => String(c.category_id)));
+  const list = await xtreamApi('action=get_vod_streams');
+  state.vod = (Array.isArray(list) ? list : []).filter((m) => allowed.has(String(m.category_id)));
+}
+
 async function ensureVod() {
-  if (state.vod) { renderMovies(); return; }
-  $('movieGrid').innerHTML = '<div class="loading">Chargement des films…</div>';
-  try {
-    const cats = await xtreamApi('action=get_vod_categories');
-    state.vodCats = Array.isArray(cats) ? cats : [];
-    const list = await xtreamApi('action=get_vod_streams');
-    state.vod = Array.isArray(list) ? list : [];
-  } catch (e) {
-    $('movieGrid').innerHTML = `<div class="loading">Impossible de charger les films : ${escapeHtml(e.message)}</div>`;
-    state.vod = state.vod || [];
-    return;
+  if (!state.vod) {
+    $('movieGrid').innerHTML = '<div class="loading">Chargement des films…</div>';
+    try { await loadVodData(); }
+    catch (e) { $('movieGrid').innerHTML = `<div class="loading">Impossible de charger les films : ${escapeHtml(e.message)}</div>`; state.vod = state.vod || []; return; }
   }
   fillContentCat($('vodCat'), state.vodCats, state.vod.length);
   renderMovies();
@@ -376,18 +398,21 @@ function playMovie(m) {
 }
 
 /* ---------- SÉRIES ---------- */
+// Charge séries FR (catégories + liste) une seule fois.
+async function loadSeriesData() {
+  if (state.series) return;
+  const cats = await xtreamApi('action=get_series_categories');
+  state.seriesCats = (Array.isArray(cats) ? cats : []).filter((c) => frCategoryAllowed(c.category_name));
+  const allowed = new Set(state.seriesCats.map((c) => String(c.category_id)));
+  const list = await xtreamApi('action=get_series');
+  state.series = (Array.isArray(list) ? list : []).filter((s) => allowed.has(String(s.category_id)));
+}
+
 async function ensureSeries() {
-  if (state.series) { renderSeries(); return; }
-  $('seriesGrid').innerHTML = '<div class="loading">Chargement des séries…</div>';
-  try {
-    const cats = await xtreamApi('action=get_series_categories');
-    state.seriesCats = Array.isArray(cats) ? cats : [];
-    const list = await xtreamApi('action=get_series');
-    state.series = Array.isArray(list) ? list : [];
-  } catch (e) {
-    $('seriesGrid').innerHTML = `<div class="loading">Impossible de charger les séries : ${escapeHtml(e.message)}</div>`;
-    state.series = state.series || [];
-    return;
+  if (!state.series) {
+    $('seriesGrid').innerHTML = '<div class="loading">Chargement des séries…</div>';
+    try { await loadSeriesData(); }
+    catch (e) { $('seriesGrid').innerHTML = `<div class="loading">Impossible de charger les séries : ${escapeHtml(e.message)}</div>`; state.series = state.series || []; return; }
   }
   fillContentCat($('seriesCat'), state.seriesCats, state.series.length);
   renderSeries();
@@ -508,7 +533,7 @@ async function buildGuideGrid() {
     list = state.allByCat[cat];
   } catch (e) { grid.innerHTML = `<div class="loading">Erreur : ${escapeHtml(e.message)}</div>`; return; }
   if (token !== guideToken) return;
-  const chans = list.slice(0, GUIDE_MAX);
+  const chans = list.filter((c) => !isJunkChannel(c)).slice(0, GUIDE_MAX);
   $('guideHint').textContent = list.length > GUIDE_MAX ? `${GUIDE_MAX} sur ${list.length} chaînes` : `${list.length} chaîne(s)`;
   grid.innerHTML = '';
   const rows = chans.map((c) => {
@@ -589,31 +614,17 @@ function buildHome() {
 
 async function fillHomeContent(moviesRow, seriesRow) {
   try {
-    await ensureVodSilent();
+    await loadVodData();
     const recent = [...(state.vod || [])].sort((a, b) => (Number(b.added) || 0) - (Number(a.added) || 0)).slice(0, 18);
-    setRowCards(moviesRow, recent.map((m) => posterCard({ title: m.name, cover: m.stream_icon || m.cover, rating: m.rating, onClick: () => playMovie(m) })));
-  } catch { setRowCards(moviesRow, [emptyTile('Films indisponibles')]); }
+    if (recent.length) setRowCards(moviesRow, recent.map((m) => posterCard({ title: m.name, cover: m.stream_icon || m.cover, rating: m.rating, onClick: () => playMovie(m) })));
+    else moviesRow.remove();
+  } catch { moviesRow.remove(); }
   try {
-    await ensureSeriesSilent();
+    await loadSeriesData();
     const recent = [...(state.series || [])].sort((a, b) => (Number(b.last_modified) || 0) - (Number(a.last_modified) || 0)).slice(0, 18);
-    setRowCards(seriesRow, recent.map((s) => posterCard({ title: s.name, cover: s.cover || s.stream_icon, rating: s.rating, onClick: () => openSeries(s) })));
-  } catch { setRowCards(seriesRow, [emptyTile('Séries indisponibles')]); }
-}
-
-// chargements silencieux (pour l'accueil) sans toucher aux grilles
-async function ensureVodSilent() {
-  if (state.vod) return;
-  const cats = await xtreamApi('action=get_vod_categories');
-  state.vodCats = Array.isArray(cats) ? cats : [];
-  const list = await xtreamApi('action=get_vod_streams');
-  state.vod = Array.isArray(list) ? list : [];
-}
-async function ensureSeriesSilent() {
-  if (state.series) return;
-  const cats = await xtreamApi('action=get_series_categories');
-  state.seriesCats = Array.isArray(cats) ? cats : [];
-  const list = await xtreamApi('action=get_series');
-  state.series = Array.isArray(list) ? list : [];
+    if (recent.length) setRowCards(seriesRow, recent.map((s) => posterCard({ title: s.name, cover: s.cover || s.stream_icon, rating: s.rating, onClick: () => openSeries(s) })));
+    else seriesRow.remove();
+  } catch { seriesRow.remove(); }
 }
 
 function makeRow(title, cards) {
@@ -685,9 +696,20 @@ function playMedia(url, title, isLive, crumb) {
   destroyPlayer();
   const v = $('video');
   suppressResume = false;
-  v.src = url;
-  v.play().catch(() => {});
-  v.onerror = () => { $('overlay').classList.remove('hidden'); $('overlay').textContent = 'Lecture impossible (format non supporté par le lecteur). Essayez VLC.'; };
+  v.onerror = () => {
+    $('overlay').classList.remove('hidden');
+    $('overlay').textContent = 'Lecture impossible : format non supporté par le lecteur (souvent .mkv/.avi). Ouvre le fichier dans VLC.';
+  };
+  if (/\.m3u8(\?|$)/i.test(url) && window.Hls && Hls.isSupported()) {
+    const hls = new Hls();
+    hls.loadSource(url);
+    hls.attachMedia(v);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => v.play().catch(() => {}));
+    state.player = hls;
+  } else {
+    v.src = url;
+    v.play().catch(() => {});
+  }
 }
 
 function decodeEpg(b64) {
@@ -911,7 +933,7 @@ function fmtDate(ts) {
   return isNaN(d) ? '—' : d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
-async function showInfo() {
+async function buildSettings() {
   const i = state.info || {};
   const ui = i.user_info || {};
   const si = i.server_info || {};
@@ -929,7 +951,7 @@ async function showInfo() {
     ['Fuseau', si.timezone || '—'],
     ['Utilisateur', state.usr]
   ];
-  $('infoBody').innerHTML = rows.map(([k, v, cls]) =>
+  $('settingsBody').innerHTML = rows.map(([k, v, cls]) =>
     `<div class="row"><span class="k">${k}</span><span class="v ${cls || ''}">${v}</span></div>`
   ).join('') +
     `<div class="row"><span class="k">Dossier d'enregistrement</span><span class="v" id="recDirVal">${recDir}</span></div>` +
@@ -955,7 +977,6 @@ async function showInfo() {
     await window.api.xmltvConfig({ enabled: !s.enabled });
     setTimeout(refreshXmltv, 800);
   };
-  $('infoModal').classList.remove('hidden');
 }
 
 /* ---------- Réglage export WhatsApp après enregistrement ---------- */
@@ -986,11 +1007,6 @@ function channelOf(name) {
   s = s.replace(/_whatsapp$/i, '');
   s = s.replace(/_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}$/, '');
   return s || name;
-}
-
-async function openRecModal() {
-  $('recModal').classList.remove('hidden');
-  await loadRecordings();
 }
 
 async function loadRecordings() {
@@ -1178,13 +1194,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Nav rail
   document.querySelectorAll('.rail .nav[data-view]').forEach((b) => {
-    b.onclick = () => {
-      const v = b.dataset.view;
-      if (v === 'recordings') { openRecModal(); return; }
-      showView(v);
-    };
+    b.onclick = () => showView(b.dataset.view);
   });
-  $('navInfo').onclick = showInfo;
   $('navLogout').onclick = () => {
     destroyPlayer();
     if (state.recId) window.api.recordStop(state.recId);
@@ -1216,7 +1227,6 @@ window.addEventListener('DOMContentLoaded', () => {
   $('seasonSelect').onchange = (e) => renderEpisodes(e.target.value);
 
   // Enregistrements
-  $('recModalClose').onclick = () => $('recModal').classList.add('hidden');
   $('recOpenFolder').onclick = () => window.api.openRecordingsDir();
   $('recExportAll').onclick = exportAllWhatsapp;
   $('recAskWa').checked = getAskWa();
@@ -1237,10 +1247,6 @@ window.addEventListener('DOMContentLoaded', () => {
   window.api.onMainError((d) => { if (d && d.msg) console.error('main:', d.msg); });
   window.api.onTunnelStatus((d) => { $('tunnelStatus').textContent = d.msg || ''; });
   window.api.onTunnelStopped(() => { resetTunnelUI(); state.tunnelUrl = ''; });
-
-  // Infos
-  $('infoClose').onclick = () => $('infoModal').classList.add('hidden');
-  $('infoModal').onclick = (e) => { if (e.target.id === 'infoModal') $('infoModal').classList.add('hidden'); };
 
   window.api.onRecordStopped((data) => {
     stopRecUI();

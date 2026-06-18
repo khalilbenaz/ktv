@@ -36,7 +36,7 @@
       <button class="nav" data-view="guide"><span class="ic">🗓️</span> <span class="lbl">Guide TV</span></button>
       <button class="nav" data-view="recordings"><span class="ic">⏺️</span> <span class="lbl">Enregistrements</span></button>
       <div class="spacer"></div>
-      <button class="nav" id="navInfo"><span class="ic">⚙️</span> <span class="lbl">Réglages</span></button>
+      <button class="nav" data-view="settings"><span class="ic">⚙️</span> <span class="lbl">Réglages</span></button>
       <button class="nav" id="navLogout"><span class="ic">🚪</span> <span class="lbl">Quitter</span></button>
     </aside>
 
@@ -100,6 +100,33 @@
             <span class="count" id="guideHint"></span>
           </div>
           <div id="guideGrid" class="guide"></div>
+        </section>
+
+        <!-- RECORDINGS (écran) -->
+        <section class="view" id="view-recordings">
+          <div class="view-panel">
+            <h2 class="view-h">📼 Mes enregistrements</h2>
+            <p class="hint" id="recDirHint">—</p>
+            <div class="rec-controls">
+              <select id="recFilter" title="Filtrer par chaîne"></select>
+              <input id="recSearch" type="text" placeholder="Rechercher…" autocomplete="off" />
+            </div>
+            <ul id="recList" class="rec-list"></ul>
+            <div id="recPager" class="rec-pager"></div>
+            <label class="rec-opt"><input type="checkbox" id="recAskWa" /> Proposer l'export WhatsApp à la fin d'un enregistrement</label>
+            <div class="rec-foot">
+              <button id="recExportAll" class="ghost">📱 Tout convertir (filtre actuel)</button>
+              <button id="recOpenFolder" class="copy" style="margin-top:0;">📁 Ouvrir le dossier</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- SETTINGS (écran) -->
+        <section class="view" id="view-settings">
+          <div class="view-panel">
+            <h2 class="view-h">⚙️ Réglages &amp; abonnement</h2>
+            <div id="settingsBody"></div>
+          </div>
         </section>
 
         <!-- PLAYER -->
@@ -173,41 +200,6 @@
         </div>
         <ul id="episodeList" class="episodes"></ul>
       </div>
-    </div>
-  </div>
-
-  <!-- MODAL ENREGISTREMENTS -->
-  <div id="recModal" class="modal hidden">
-    <div class="modal-card">
-      <div class="modal-head">
-        <h2>📼 Mes enregistrements</h2>
-        <button id="recModalClose" class="modal-x">✕</button>
-      </div>
-      <div class="modal-body">
-        <p class="hint" id="recDirHint">—</p>
-        <div class="rec-controls">
-          <select id="recFilter" title="Filtrer par chaîne"></select>
-          <input id="recSearch" type="text" placeholder="Rechercher…" autocomplete="off" />
-        </div>
-        <ul id="recList" class="rec-list"></ul>
-        <div id="recPager" class="rec-pager"></div>
-        <label class="rec-opt"><input type="checkbox" id="recAskWa" /> Proposer l'export WhatsApp à la fin d'un enregistrement</label>
-        <div class="rec-foot">
-          <button id="recExportAll" class="ghost">📱 Tout convertir (filtre actuel)</button>
-          <button id="recOpenFolder" class="copy" style="margin-top:0;">📁 Ouvrir le dossier</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL INFOS IPTV -->
-  <div id="infoModal" class="modal hidden">
-    <div class="modal-card">
-      <div class="modal-head">
-        <h2>Détails de l'abonnement</h2>
-        <button id="infoClose" class="modal-x">✕</button>
-      </div>
-      <div id="infoBody" class="modal-body"></div>
     </div>
   </div>
 
