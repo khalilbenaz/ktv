@@ -1,8 +1,11 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
-// Ne garder que : chaînes Françaises, Marocaines, beIN Sports Arabe
+// Ne garder que : chaînes Françaises, Marocaines, beIN Sports Arabe (LIVE uniquement)
 function categoryAllowed(name) {
   const n = (name || '').toUpperCase();
   if (n.startsWith('FR|')) return true;                              // France
@@ -15,18 +18,27 @@ const state = {
   srv: '', usr: '', pwd: '',
   categories: [],
   channels: [],     // current category's streams
-  allByCat: {},     // cache
-  info: null,       // user_info + server_info from login
-  current: null,    // current stream object
-  player: null,     // hls or mpegts instance
-  recId: null,      // active recording id
+  allByCat: {},     // cache live par catégorie
+  info: null,
+  current: null,    // contenu live courant
+  player: null,
+  recId: null,
   recStart: 0,
   recTimer: null,
   recStartedRelay: false,
   relaying: false,
   relayLan: '',
   tunnelUrl: '',
-  favs: []          // chaînes favorites (objets {stream_id, name, stream_icon})
+  favs: [],         // chaînes favorites {stream_id, name, stream_icon}
+  recent: [],       // vu récemment
+  // navigation
+  view: 'home',     // vue affichée
+  browse: 'home',   // dernière vue de navigation (pour le retour depuis le lecteur)
+  // VOD / séries
+  vod: null, vodCats: [],
+  series: null, seriesCats: [],
+  // caches EPG (cartes live + guide)
+  epgCache: {}
 };
 
 /* ---------- Favoris ---------- */
@@ -40,9 +52,19 @@ function toggleFav(ch) {
   if (isFav(ch.stream_id)) state.favs = state.favs.filter((f) => f.stream_id != ch.stream_id);
   else state.favs.push({ stream_id: ch.stream_id, name: ch.name, stream_icon: ch.stream_icon || '', category_id: ch.category_id });
   saveFavs();
-  // rafraîchit le compteur dans le sélecteur + la liste si on est sur Favoris
-  const opt = $('catSelect').querySelector('option[value="favs"]');
-  if (opt) opt.textContent = `★ Favoris (${state.favs.length})`;
+}
+
+/* ---------- Vu récemment ---------- */
+function loadRecent() {
+  try { state.recent = JSON.parse(localStorage.getItem('iptv_recent') || '[]'); }
+  catch { state.recent = []; }
+}
+function saveRecent() { try { localStorage.setItem('iptv_recent', JSON.stringify(state.recent.slice(0, 24))); } catch {} }
+function pushRecent(item) {
+  state.recent = state.recent.filter((r) => !(r.type === item.type && r.id == item.id));
+  state.recent.unshift(item);
+  state.recent = state.recent.slice(0, 24);
+  saveRecent();
 }
 
 /* ---------- Xtream API ---------- */
@@ -55,7 +77,6 @@ async function xtreamApi(params) {
   return r.json();
 }
 
-// Déduit la qualité depuis le nom (gère aussi les exposants Unicode ⁸ᴷ ᵁᴴᴰ …)
 function detectQuality(name) {
   const n = name || '';
   const u = n.toUpperCase();
@@ -69,6 +90,12 @@ function detectQuality(name) {
 
 function streamUrl(id, ext) {
   return `${apiBase()}/live/${encodeURIComponent(state.usr)}/${encodeURIComponent(state.pwd)}/${id}.${ext}`;
+}
+function vodUrl(id, ext) {
+  return `${apiBase()}/movie/${encodeURIComponent(state.usr)}/${encodeURIComponent(state.pwd)}/${id}.${ext || 'mp4'}`;
+}
+function seriesUrl(id, ext) {
+  return `${apiBase()}/series/${encodeURIComponent(state.usr)}/${encodeURIComponent(state.pwd)}/${id}.${ext || 'mp4'}`;
 }
 
 /* ---------- Login ---------- */
@@ -88,18 +115,18 @@ async function connect() {
   $('connectBtn').textContent = 'Connexion…';
   try {
     const info = await xtreamApi('');
-    if (!info || !info.user_info || info.user_info.auth === 0) {
-      throw new Error('Identifiants invalides');
-    }
+    if (!info || !info.user_info || info.user_info.auth === 0) throw new Error('Identifiants invalides');
     state.info = info;
     localStorage.setItem('xtream', JSON.stringify({ srv: s, usr, pwd }));
-    // EPG du fournisseur (xmltv.php) en source prioritaire pour le secours EPG
     try {
       window.api.setProviderEpg(`${apiBase()}/xmltv.php?username=${encodeURIComponent(usr)}&password=${encodeURIComponent(pwd)}`);
     } catch {}
     await loadCategories();
+    updateAcctChip();
+    buildHome();
     $('login').classList.add('hidden');
     $('app').classList.remove('hidden');
+    showView('home');
   } catch (e) {
     msg.textContent = 'Échec : ' + e.message;
   } finally {
@@ -108,122 +135,570 @@ async function connect() {
   }
 }
 
+function updateAcctChip() {
+  const ui = (state.info && state.info.user_info) || {};
+  const active = ui.active_cons || 0, max = ui.max_connections || '—';
+  $('acctTxt').textContent = (ui.status === 'Active' || !ui.status) ? `Compte actif · ${active}/${max}` : (ui.status || '—');
+}
+
 async function loadCategories() {
   const cats = await xtreamApi('action=get_live_categories');
-  state.categories = (Array.isArray(cats) ? cats : []).filter(c => categoryAllowed(c.category_name));
-  const sel = $('catSelect');
+  state.categories = (Array.isArray(cats) ? cats : []).filter((c) => categoryAllowed(c.category_name));
+  fillCatSelect($('catSelect'), true);
+  fillCatSelect($('guideCat'), false);
+}
+
+// Remplit un <select> de catégories live. withFav = ajoute l'entrée Favoris.
+function fillCatSelect(sel, withFav) {
   sel.innerHTML = '';
-  const favOpt = document.createElement('option');
-  favOpt.value = 'favs';
-  favOpt.textContent = `★ Favoris (${state.favs.length})`;
-  sel.appendChild(favOpt);
-  for (const c of state.categories) {
+  if (withFav) {
     const o = document.createElement('option');
-    o.value = c.category_id;
-    o.textContent = c.category_name;
+    o.value = 'favs'; o.textContent = `★ Favoris (${state.favs.length})`;
     sel.appendChild(o);
   }
-  const firstCat = state.categories[0] ? state.categories[0].category_id : null;
-  if (!firstCat) return;
-  sel.value = firstCat;
-  await loadChannels(firstCat);
+  for (const c of state.categories) {
+    const o = document.createElement('option');
+    o.value = c.category_id; o.textContent = c.category_name;
+    sel.appendChild(o);
+  }
+}
+
+/* ---------- Routeur de vues ---------- */
+function showView(name) {
+  state.view = name;
+  if (name !== 'player') {
+    state.browse = name;
+    document.querySelectorAll('.rail .nav').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
+    $('search').value = '';
+  }
+  document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + name));
+  // chargement paresseux par section
+  if (name === 'live') ensureLive();
+  else if (name === 'movies') ensureVod();
+  else if (name === 'series') ensureSeries();
+  else if (name === 'guide') ensureGuide();
+}
+
+function onSearch() {
+  if (state.view === 'live') renderLiveGrid();
+  else if (state.view === 'movies') renderMovies();
+  else if (state.view === 'series') renderSeries();
+}
+
+/* ---------- LIVE ---------- */
+async function ensureLive() {
+  if (state.channels.length || !state.categories.length) { renderLiveGrid(); return; }
+  $('catSelect').value = state.categories[0].category_id;
+  await loadChannels(state.categories[0].category_id);
 }
 
 async function loadChannels(catId) {
   let list;
-  if (catId === 'favs') {
-    state.channels = state.favs;
-    renderChannels();
-    return;
+  if (catId === 'favs') { state.channels = state.favs; renderLiveGrid(); return; }
+  if (!state.allByCat[catId]) {
+    list = await xtreamApi('action=get_live_streams&category_id=' + catId);
+    state.allByCat[catId] = Array.isArray(list) ? list : [];
   }
-  if (catId === 'all') {
-    if (!state.allByCat['all']) {
-      list = await xtreamApi('action=get_live_streams');
-      state.allByCat['all'] = Array.isArray(list) ? list : [];
-    }
-    list = state.allByCat['all'];
-  } else {
-    if (!state.allByCat[catId]) {
-      list = await xtreamApi('action=get_live_streams&category_id=' + catId);
-      state.allByCat[catId] = Array.isArray(list) ? list : [];
-    }
-    list = state.allByCat[catId];
-  }
-  state.channels = list;
-  renderChannels();
+  state.channels = state.allByCat[catId];
+  renderLiveGrid();
 }
 
-function renderChannels() {
+function filteredChannels() {
   const q = $('search').value.trim().toLowerCase();
   const qual = $('qualSelect').value;
-  const ul = $('channels');
-  ul.innerHTML = '';
   let items = state.channels;
-  if (q) items = items.filter(c => (c.name || '').toLowerCase().includes(q));
-  if (qual) items = items.filter(c => detectQuality(c.name) === qual);
-
-  const frag = document.createDocumentFragment();
-  for (const c of items.slice(0, 2000)) {
-    const li = document.createElement('li');
-    li.dataset.id = c.stream_id;
-    if (state.current && state.current.stream_id === c.stream_id) li.classList.add('active');
-    const img = document.createElement('img');
-    img.src = c.stream_icon || '';
-    img.onerror = () => { img.style.visibility = 'hidden'; };
-    const span = document.createElement('span');
-    span.textContent = c.name || ('Chaîne ' + c.stream_id);
-    li.appendChild(img);
-    li.appendChild(span);
-    const tier = detectQuality(c.name);
-    if (tier) {
-      const b = document.createElement('span');
-      b.className = 'badge q' + tier;
-      b.textContent = tier;
-      li.appendChild(b);
-    }
-    const star = document.createElement('button');
-    star.className = 'fav-btn' + (isFav(c.stream_id) ? ' on' : '');
-    star.textContent = isFav(c.stream_id) ? '★' : '☆';
-    star.title = 'Favori';
-    star.onclick = (ev) => {
-      ev.stopPropagation();
-      toggleFav(c);
-      const on = isFav(c.stream_id);
-      star.classList.toggle('on', on);
-      star.textContent = on ? '★' : '☆';
-      if ($('catSelect').value === 'favs') loadChannels('favs'); // retire de la liste
-    };
-    li.appendChild(star);
-    li.onclick = () => play(c);
-    frag.appendChild(li);
-  }
-  ul.appendChild(frag);
+  if (q) items = items.filter((c) => (c.name || '').toLowerCase().includes(q));
+  if (qual) items = items.filter((c) => detectQuality(c.name) === qual);
+  return items;
 }
 
-/* ---------- Playback ---------- */
-let suppressResume = false; // true pendant un arrêt volontaire (pour ne pas relancer)
+function renderLiveGrid() {
+  const grid = $('liveGrid');
+  const items = filteredChannels();
+  $('liveCount').textContent = `${items.length} chaîne(s)`;
+  grid.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  for (const c of items.slice(0, 1500)) frag.appendChild(channelCard(c, true));
+  grid.appendChild(frag);
+  observeEpgCards();
+}
+
+// Carte chaîne (live grid + accueil). epgLazy = charger EPG quand visible.
+function channelCard(c, epgLazy) {
+  const card = document.createElement('div');
+  card.className = 'chan-card';
+  card.dataset.id = c.stream_id;
+  if (state.current && state.current.stream_id == c.stream_id) card.classList.add('active');
+
+  const head = document.createElement('div');
+  head.className = 'cc-head';
+  const lg = document.createElement('div');
+  lg.className = 'cc-logo';
+  if (c.stream_icon) {
+    const img = document.createElement('img');
+    img.src = c.stream_icon; img.loading = 'lazy';
+    img.onerror = () => { lg.textContent = initials(c.name); };
+    lg.appendChild(img);
+  } else lg.textContent = initials(c.name);
+  head.appendChild(lg);
+
+  const meta = document.createElement('div');
+  meta.className = 'cc-meta';
+  const nm = document.createElement('div');
+  nm.className = 'cc-name'; nm.textContent = c.name || ('Chaîne ' + c.stream_id);
+  meta.appendChild(nm);
+  const tier = detectQuality(c.name);
+  const sub = document.createElement('div');
+  sub.className = 'cc-sub';
+  sub.innerHTML = `<span class="live-dot">● EN DIRECT</span>${tier ? ` · <span class="qtag q${tier}">${tier}</span>` : ''}`;
+  meta.appendChild(sub);
+  head.appendChild(meta);
+
+  const star = document.createElement('button');
+  star.className = 'fav-btn' + (isFav(c.stream_id) ? ' on' : '');
+  star.textContent = isFav(c.stream_id) ? '★' : '☆';
+  star.title = 'Favori';
+  star.onclick = (ev) => {
+    ev.stopPropagation();
+    toggleFav(c);
+    const on = isFav(c.stream_id);
+    star.classList.toggle('on', on);
+    star.textContent = on ? '★' : '☆';
+    const opt = $('catSelect').querySelector('option[value="favs"]');
+    if (opt) opt.textContent = `★ Favoris (${state.favs.length})`;
+    if (state.view === 'live' && $('catSelect').value === 'favs') loadChannels('favs');
+  };
+  head.appendChild(star);
+  card.appendChild(head);
+
+  const now = document.createElement('div');
+  now.className = 'cc-now'; now.dataset.epg = c.stream_id;
+  card.appendChild(now);
+
+  card.onclick = () => play(c);
+  if (epgLazy) card.dataset.lazyepg = '1';
+  return card;
+}
+
+function initials(name) {
+  return (name || '?').replace(/[^A-Za-z0-9À-ÿ ]/g, '').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase() || '?';
+}
+
+// IntersectionObserver pour charger l'EPG des cartes visibles
+let epgObserver = null;
+function observeEpgCards() {
+  if (!('IntersectionObserver' in window)) return;
+  if (!epgObserver) {
+    epgObserver = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const card = e.target;
+        epgObserver.unobserve(card);
+        fillCardEpg(card);
+      }
+    }, { rootMargin: '120px' });
+  }
+  document.querySelectorAll('.chan-card[data-lazyepg]').forEach((card) => {
+    card.removeAttribute('data-lazyepg');
+    epgObserver.observe(card);
+  });
+}
+
+async function fillCardEpg(card) {
+  const id = card.dataset.id;
+  const slot = card.querySelector('.cc-now');
+  if (!slot) return;
+  const ch = (state.channels || []).find((c) => c.stream_id == id) || { stream_id: id };
+  const e = await getChannelEpg(ch);
+  if (!e || (!e.cur && !e.next)) return;
+  if (e.cur) {
+    slot.innerHTML = `<span class="cc-prog">▶ ${escapeHtml(e.cur.title)}</span>`;
+    if (e.cur.en > e.cur.st) {
+      const pct = Math.max(0, Math.min(100, Math.round(((Date.now() / 1000 - e.cur.st) / (e.cur.en - e.cur.st)) * 100)));
+      slot.innerHTML += `<div class="cc-bar"><i style="width:${pct}%"></i></div>`;
+    }
+  } else if (e.next) {
+    slot.innerHTML = `<span class="cc-prog muted">⏭ ${epgTime(e.next.st)} ${escapeHtml(e.next.title)}</span>`;
+  }
+}
+
+/* ---------- FILMS (VOD) ---------- */
+async function ensureVod() {
+  if (state.vod) { renderMovies(); return; }
+  $('movieGrid').innerHTML = '<div class="loading">Chargement des films…</div>';
+  try {
+    const cats = await xtreamApi('action=get_vod_categories');
+    state.vodCats = Array.isArray(cats) ? cats : [];
+    const list = await xtreamApi('action=get_vod_streams');
+    state.vod = Array.isArray(list) ? list : [];
+  } catch (e) {
+    $('movieGrid').innerHTML = `<div class="loading">Impossible de charger les films : ${escapeHtml(e.message)}</div>`;
+    state.vod = state.vod || [];
+    return;
+  }
+  fillContentCat($('vodCat'), state.vodCats, state.vod.length);
+  renderMovies();
+}
+
+function fillContentCat(sel, cats, total) {
+  sel.innerHTML = `<option value="">Toutes les catégories (${total})</option>`;
+  for (const c of cats) {
+    const o = document.createElement('option');
+    o.value = c.category_id; o.textContent = c.category_name;
+    sel.appendChild(o);
+  }
+}
+
+function renderMovies() {
+  const grid = $('movieGrid');
+  const cat = $('vodCat').value;
+  const q = $('search').value.trim().toLowerCase();
+  let items = state.vod || [];
+  if (cat) items = items.filter((m) => m.category_id == cat);
+  if (q) items = items.filter((m) => (m.name || '').toLowerCase().includes(q));
+  $('movieCount').textContent = `${items.length} film(s)`;
+  grid.innerHTML = '';
+  if (!items.length) { grid.innerHTML = '<div class="loading">Aucun film.</div>'; return; }
+  const frag = document.createDocumentFragment();
+  for (const m of items.slice(0, 600)) {
+    frag.appendChild(posterCard({
+      title: m.name, cover: m.stream_icon || m.cover, rating: m.rating,
+      onClick: () => playMovie(m)
+    }));
+  }
+  grid.appendChild(frag);
+}
+
+function playMovie(m) {
+  const ext = m.container_extension || 'mp4';
+  pushRecent({ type: 'movie', id: m.stream_id, name: m.name, icon: m.stream_icon || m.cover, ext });
+  playMedia(vodUrl(m.stream_id, ext), m.name || 'Film', false, '🎬 Films');
+}
+
+/* ---------- SÉRIES ---------- */
+async function ensureSeries() {
+  if (state.series) { renderSeries(); return; }
+  $('seriesGrid').innerHTML = '<div class="loading">Chargement des séries…</div>';
+  try {
+    const cats = await xtreamApi('action=get_series_categories');
+    state.seriesCats = Array.isArray(cats) ? cats : [];
+    const list = await xtreamApi('action=get_series');
+    state.series = Array.isArray(list) ? list : [];
+  } catch (e) {
+    $('seriesGrid').innerHTML = `<div class="loading">Impossible de charger les séries : ${escapeHtml(e.message)}</div>`;
+    state.series = state.series || [];
+    return;
+  }
+  fillContentCat($('seriesCat'), state.seriesCats, state.series.length);
+  renderSeries();
+}
+
+function renderSeries() {
+  const grid = $('seriesGrid');
+  const cat = $('seriesCat').value;
+  const q = $('search').value.trim().toLowerCase();
+  let items = state.series || [];
+  if (cat) items = items.filter((s) => s.category_id == cat);
+  if (q) items = items.filter((s) => (s.name || '').toLowerCase().includes(q));
+  $('seriesCount').textContent = `${items.length} série(s)`;
+  grid.innerHTML = '';
+  if (!items.length) { grid.innerHTML = '<div class="loading">Aucune série.</div>'; return; }
+  const frag = document.createDocumentFragment();
+  for (const s of items.slice(0, 600)) {
+    frag.appendChild(posterCard({
+      title: s.name, cover: s.cover || s.stream_icon, rating: s.rating,
+      onClick: () => openSeries(s)
+    }));
+  }
+  grid.appendChild(frag);
+}
+
+let curSeries = null;
+async function openSeries(s) {
+  curSeries = { ...s, episodes: null };
+  $('seriesTitle').textContent = s.name || 'Série';
+  $('seriesPlot').textContent = 'Chargement…';
+  $('seasonSelect').innerHTML = '';
+  $('episodeList').innerHTML = '';
+  const cover = $('seriesCover');
+  cover.innerHTML = (s.cover || s.stream_icon) ? `<img src="${escapeHtml(s.cover || s.stream_icon)}">` : '🎞️';
+  $('seriesModal').classList.remove('hidden');
+  try {
+    const info = await xtreamApi('action=get_series_info&series_id=' + s.series_id);
+    curSeries.episodes = (info && info.episodes) || {};
+    const plot = (info && info.info && (info.info.plot || info.info.description)) || '';
+    $('seriesPlot').textContent = plot || 'Aucune description.';
+    const seasons = Object.keys(curSeries.episodes).sort((a, b) => Number(a) - Number(b));
+    if (!seasons.length) { $('episodeList').innerHTML = '<li class="rec-empty">Aucun épisode.</li>'; return; }
+    $('seasonSelect').innerHTML = seasons.map((n) => `<option value="${escapeHtml(n)}">Saison ${escapeHtml(n)}</option>`).join('');
+    renderEpisodes(seasons[0]);
+  } catch (e) {
+    $('seriesPlot').textContent = 'Impossible de charger les épisodes : ' + e.message;
+  }
+}
+
+function renderEpisodes(season) {
+  const eps = (curSeries.episodes && curSeries.episodes[season]) || [];
+  const ul = $('episodeList');
+  ul.innerHTML = '';
+  for (const ep of eps) {
+    const li = document.createElement('li');
+    li.className = 'ep-item';
+    const info = ep.info || {};
+    const dur = info.duration || '';
+    li.innerHTML = `<span class="ep-n">${escapeHtml(String(ep.episode_num || ''))}</span>` +
+      `<div class="ep-meta"><span class="ep-t">${escapeHtml(ep.title || ('Épisode ' + ep.episode_num))}</span>` +
+      `<span class="ep-s">${escapeHtml(dur)}</span></div><span class="ep-play">▶</span>`;
+    li.onclick = () => {
+      const ext = ep.container_extension || 'mp4';
+      const label = `${curSeries.name} · S${season}E${ep.episode_num}`;
+      pushRecent({ type: 'series', id: ep.id, name: label, icon: curSeries.cover || curSeries.stream_icon, ext });
+      $('seriesModal').classList.add('hidden');
+      playMedia(seriesUrl(ep.id, ext), label, false, '🎞️ Séries');
+    };
+    ul.appendChild(li);
+  }
+}
+
+/* ---------- Carte affiche (films/séries) ---------- */
+function posterCard({ title, cover, rating, onClick }) {
+  const card = document.createElement('div');
+  card.className = 'poster';
+  const img = document.createElement('div');
+  img.className = 'p-img';
+  if (cover) {
+    const im = document.createElement('img');
+    im.src = cover; im.loading = 'lazy';
+    im.onerror = () => { im.remove(); img.classList.add('noimg'); img.textContent = '🎬'; };
+    img.appendChild(im);
+  } else { img.classList.add('noimg'); img.textContent = '🎬'; }
+  if (rating && Number(rating) > 0) {
+    const r = document.createElement('span');
+    r.className = 'p-rate'; r.textContent = '★ ' + Number(rating).toFixed(1);
+    img.appendChild(r);
+  }
+  const t = document.createElement('div');
+  t.className = 'p-title'; t.textContent = title || '—';
+  card.appendChild(img); card.appendChild(t);
+  card.onclick = onClick;
+  return card;
+}
+
+/* ---------- GUIDE (timeline EPG) ---------- */
+const GUIDE_MAX = 80;
+let guideToken = 0;
+async function ensureGuide() {
+  // remplit le sélecteur de catégorie guide (mêmes catégories live)
+  if ($('guideCat').value === '' && state.categories[0]) $('guideCat').value = state.categories[0].category_id;
+  buildGuideGrid();
+}
+
+async function buildGuideGrid() {
+  const token = ++guideToken;
+  const cat = $('guideCat').value || (state.categories[0] && state.categories[0].category_id);
+  const grid = $('guideGrid');
+  if (!cat) { grid.innerHTML = '<div class="loading">Aucune catégorie.</div>'; return; }
+  grid.innerHTML = '<div class="loading">Chargement du guide…</div>';
+  let list;
+  try {
+    if (!state.allByCat[cat]) {
+      const r = await xtreamApi('action=get_live_streams&category_id=' + cat);
+      state.allByCat[cat] = Array.isArray(r) ? r : [];
+    }
+    list = state.allByCat[cat];
+  } catch (e) { grid.innerHTML = `<div class="loading">Erreur : ${escapeHtml(e.message)}</div>`; return; }
+  if (token !== guideToken) return;
+  const chans = list.slice(0, GUIDE_MAX);
+  $('guideHint').textContent = list.length > GUIDE_MAX ? `${GUIDE_MAX} sur ${list.length} chaînes` : `${list.length} chaîne(s)`;
+  grid.innerHTML = '';
+  const rows = chans.map((c) => {
+    const row = document.createElement('div');
+    row.className = 'g-row';
+    row.innerHTML =
+      `<div class="g-ch"><div class="g-logo">${c.stream_icon ? `<img src="${escapeHtml(c.stream_icon)}">` : escapeHtml(initials(c.name))}</div>` +
+      `<span class="g-name">${escapeHtml(c.name || ('Chaîne ' + c.stream_id))}</span></div>` +
+      `<div class="g-progs"><span class="muted">…</span></div>`;
+    const im = row.querySelector('img');
+    if (im) im.onerror = () => { im.replaceWith(document.createTextNode(initials(c.name))); };
+    row.querySelector('.g-ch').onclick = () => play(c);
+    grid.appendChild(row);
+    return { c, row };
+  });
+  if (!rows.length) { grid.innerHTML = '<div class="loading">Aucune chaîne.</div>'; return; }
+  let idx = 0;
+  const worker = async () => {
+    while (idx < rows.length) {
+      if (token !== guideToken) return;
+      const { c, row } = rows[idx++];
+      await fillGuideRow(c, row);
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, worker));
+}
+
+async function fillGuideRow(c, row) {
+  const slot = row.querySelector('.g-progs');
+  let progs = [];
+  try {
+    const data = await xtreamApi('action=get_short_epg&stream_id=' + c.stream_id + '&limit=8');
+    progs = (((data && data.epg_listings) || [])
+      .map((x) => ({ title: decodeEpg(x.title), st: Number(x.start_timestamp) || 0, en: Number(x.stop_timestamp) || 0 }))
+      .filter((p) => p.title && p.st).sort((a, b) => a.st - b.st));
+  } catch {}
+  if (!progs.length) {
+    const e = await getChannelEpg(c);
+    if (e && e.cur) progs = [e.cur, e.next].filter(Boolean);
+  }
+  if (!progs.length) { slot.innerHTML = '<span class="muted">Pas de programme</span>'; return; }
+  const now = Date.now() / 1000;
+  slot.innerHTML = '';
+  for (const p of progs.slice(0, 6)) {
+    const live = p.st <= now && now < (p.en || p.st);
+    const block = document.createElement('div');
+    block.className = 'g-prog' + (live ? ' live' : '');
+    const span = (p.en && p.en > p.st) ? Math.round((p.en - p.st) / 60) : 0;
+    block.style.flex = span ? Math.max(1, Math.min(6, span / 30)) : 1;
+    block.innerHTML = `<span class="gp-t">${escapeHtml(p.title)}</span><span class="gp-h">${epgTime(p.st)}</span>`;
+    if (live && p.en > p.st) {
+      const pct = Math.round(((now - p.st) / (p.en - p.st)) * 100);
+      block.innerHTML += `<div class="gp-bar"><i style="width:${pct}%"></i></div>`;
+    }
+    block.onclick = () => play(c);
+    slot.appendChild(block);
+  }
+}
+
+/* ---------- ACCUEIL ---------- */
+function buildHome() {
+  const root = $('homeRows');
+  root.innerHTML = '';
+
+  // Hero : reprend le 1er "vu récemment" ou 1er favori
+  const heroItem = state.recent[0] || (state.favs[0] && { type: 'live', id: state.favs[0].stream_id, name: state.favs[0].name, icon: state.favs[0].stream_icon });
+  if (heroItem) root.appendChild(buildHero(heroItem));
+
+  if (state.recent.length) root.appendChild(makeRow('Reprendre la lecture', state.recent.map(recentCard)));
+  if (state.favs.length) root.appendChild(makeRow('Chaînes favorites', state.favs.map((f) => channelCard(f, false))));
+
+  // Films & séries (récemment ajoutés) — chargés à la volée
+  const moviesRow = makeRow('Films récemment ajoutés', [loadingTile()]);
+  const seriesRow = makeRow('Séries', [loadingTile()]);
+  root.appendChild(moviesRow); root.appendChild(seriesRow);
+  fillHomeContent(moviesRow, seriesRow);
+}
+
+async function fillHomeContent(moviesRow, seriesRow) {
+  try {
+    await ensureVodSilent();
+    const recent = [...(state.vod || [])].sort((a, b) => (Number(b.added) || 0) - (Number(a.added) || 0)).slice(0, 18);
+    setRowCards(moviesRow, recent.map((m) => posterCard({ title: m.name, cover: m.stream_icon || m.cover, rating: m.rating, onClick: () => playMovie(m) })));
+  } catch { setRowCards(moviesRow, [emptyTile('Films indisponibles')]); }
+  try {
+    await ensureSeriesSilent();
+    const recent = [...(state.series || [])].sort((a, b) => (Number(b.last_modified) || 0) - (Number(a.last_modified) || 0)).slice(0, 18);
+    setRowCards(seriesRow, recent.map((s) => posterCard({ title: s.name, cover: s.cover || s.stream_icon, rating: s.rating, onClick: () => openSeries(s) })));
+  } catch { setRowCards(seriesRow, [emptyTile('Séries indisponibles')]); }
+}
+
+// chargements silencieux (pour l'accueil) sans toucher aux grilles
+async function ensureVodSilent() {
+  if (state.vod) return;
+  const cats = await xtreamApi('action=get_vod_categories');
+  state.vodCats = Array.isArray(cats) ? cats : [];
+  const list = await xtreamApi('action=get_vod_streams');
+  state.vod = Array.isArray(list) ? list : [];
+}
+async function ensureSeriesSilent() {
+  if (state.series) return;
+  const cats = await xtreamApi('action=get_series_categories');
+  state.seriesCats = Array.isArray(cats) ? cats : [];
+  const list = await xtreamApi('action=get_series');
+  state.series = Array.isArray(list) ? list : [];
+}
+
+function makeRow(title, cards) {
+  const row = document.createElement('div');
+  row.className = 'home-row';
+  const h = document.createElement('h2'); h.textContent = title;
+  const track = document.createElement('div'); track.className = 'track';
+  cards.forEach((c) => track.appendChild(c));
+  row.appendChild(h); row.appendChild(track);
+  return row;
+}
+function setRowCards(row, cards) {
+  const track = row.querySelector('.track');
+  track.innerHTML = '';
+  cards.forEach((c) => track.appendChild(c));
+}
+function loadingTile() { const d = document.createElement('div'); d.className = 'loading'; d.textContent = 'Chargement…'; return d; }
+function emptyTile(t) { const d = document.createElement('div'); d.className = 'loading'; d.textContent = t; return d; }
+
+function recentCard(r) {
+  if (r.type === 'live') return channelCard({ stream_id: r.id, name: r.name, stream_icon: r.icon }, false);
+  return posterCard({
+    title: r.name, cover: r.icon, rating: 0,
+    onClick: () => playMedia(r.type === 'movie' ? vodUrl(r.id, r.ext) : seriesUrl(r.id, r.ext), r.name, false, r.type === 'movie' ? '🎬 Films' : '🎞️ Séries')
+  });
+}
+
+function buildHero(item) {
+  const hero = document.createElement('div');
+  hero.className = 'hero';
+  const live = item.type === 'live';
+  hero.innerHTML =
+    `<div class="hero-art"></div><div class="hero-grad"></div>` +
+    `<div class="hero-info"><div class="hero-tag">${live ? '● Reprendre en direct' : '● Reprendre'}</div>` +
+    `<h1>${escapeHtml(item.name || '—')}</h1>` +
+    `<button class="btn play">▶ Regarder</button></div>`;
+  hero.querySelector('.btn.play').onclick = () => {
+    if (live) play({ stream_id: item.id, name: item.name, stream_icon: item.icon });
+    else playMedia(item.type === 'movie' ? vodUrl(item.id, item.ext) : seriesUrl(item.id, item.ext), item.name, false, item.type === 'movie' ? '🎬 Films' : '🎞️ Séries');
+  };
+  return hero;
+}
+
+/* ---------- Lecteur ---------- */
+let suppressResume = false;
+
+function enterPlayer(crumb, isLive) {
+  $('playerCrumb').textContent = crumb || '';
+  $('liveActions').style.display = isLive ? '' : 'none';
+  showView('player');
+}
 
 function destroyPlayer() {
   suppressResume = true;
   const v = $('video');
-  if (state.player) {
-    try { state.player.destroy(); } catch {}
-    state.player = null;
-  }
+  if (state.player) { try { state.player.destroy(); } catch {} state.player = null; }
   try { v.pause(); v.removeAttribute('src'); v.load(); } catch {}
 }
 
-// Décode un texte EPG (base64 -> UTF-8)
+// Lecture VOD / épisode (fichier direct)
+function playMedia(url, title, isLive, crumb) {
+  state.current = null;
+  enterPlayer(crumb || title, false);
+  $('nowTitle').textContent = title || '—';
+  $('nowEpg').textContent = '';
+  $('overlay').classList.add('hidden');
+  $('recBtn').disabled = true; $('relayBtn').disabled = true;
+  if (state.relaying) stopRelay();
+  destroyPlayer();
+  const v = $('video');
+  suppressResume = false;
+  v.src = url;
+  v.play().catch(() => {});
+  v.onerror = () => { $('overlay').classList.remove('hidden'); $('overlay').textContent = 'Lecture impossible (format non supporté par le lecteur). Essayez VLC.'; };
+}
+
 function decodeEpg(b64) {
   try { return decodeURIComponent(escape(atob(b64 || ''))).trim(); }
   catch { try { return atob(b64 || ''); } catch { return ''; } }
 }
-
 function epgTime(s) { const d = new Date((Number(s) || 0) * 1000); return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 
-// EPG d'une chaîne : d'abord le fournisseur Xtream, sinon secours XMLTV externe.
-// Renvoie { cur:{title,st,en}|null, next:{title,st}|null, src } ou null.
 async function getChannelEpg(channel) {
+  if (state.epgCache[channel.stream_id]) return state.epgCache[channel.stream_id];
+  let result = null;
   try {
     const data = await xtreamApi('action=get_short_epg&stream_id=' + channel.stream_id + '&limit=6');
     const items = (((data && data.epg_listings) || [])
@@ -231,18 +706,19 @@ async function getChannelEpg(channel) {
       .filter((p) => p.title && p.st).sort((a, b) => a.st - b.st));
     if (items.length) {
       const now = Date.now() / 1000;
-      return { cur: items.find((p) => p.st <= now && now < p.en) || null, next: items.find((p) => p.st > now) || null, src: 'xtream' };
+      result = { cur: items.find((p) => p.st <= now && now < p.en) || null, next: items.find((p) => p.st > now) || null, src: 'xtream' };
     }
   } catch {}
-  // secours XMLTV externe
-  try {
-    const r = await window.api.epgLookup(channel.name);
-    if (r && (r.cur || r.next)) return { cur: r.cur, next: r.next, src: 'xmltv' };
-  } catch {}
-  return null;
+  if (!result) {
+    try {
+      const r = await window.api.epgLookup(channel.name);
+      if (r && (r.cur || r.next)) result = { cur: r.cur, next: r.next, src: 'xmltv' };
+    } catch {}
+  }
+  if (result) state.epgCache[channel.stream_id] = result;
+  return result;
 }
 
-// Affiche l'EPG dans la barre du bas
 let epgReq = 0;
 async function loadEpg(channel) {
   const el = $('nowEpg');
@@ -256,107 +732,29 @@ async function loadEpg(channel) {
   el.textContent = txt;
 }
 
-/* ---------- Guide des programmes (grille EPG) ---------- */
-const EPG_MAX = 300;            // limite de chaînes scannées (perf)
-let epgGuideToken = 0;
-
-async function openEpgGuide() {
-  $('epgModal').classList.remove('hidden');
-  await buildEpgGuide();
-}
-
-async function buildEpgGuide() {
-  const token = ++epgGuideToken;
-  const ul = $('epgList');
-  const all = state.channels || [];
-  const list = all.slice(0, EPG_MAX);
-  $('epgHint').textContent = all.length > EPG_MAX
-    ? `${EPG_MAX} premières chaînes sur ${all.length} (affine la catégorie/recherche)`
-    : `${all.length} chaîne(s)`;
-  ul.innerHTML = '';
-
-  // crée les lignes (EPG "chargement…"), puis remplit en parallèle limité
-  const rows = list.map((c) => {
-    const li = document.createElement('li');
-    li.className = 'epg-item';
-    li.dataset.name = (c.name || '').toLowerCase();
-    li.innerHTML =
-      `<img src="${escapeHtml(c.stream_icon || '')}">` +
-      `<div class="epg-col"><span class="epg-ch">${escapeHtml(c.name || ('Chaîne ' + c.stream_id))}</span>` +
-      `<span class="epg-now">…</span>` +
-      `<div class="epg-bar"><i></i></div>` +
-      `<span class="epg-next"></span></div>`;
-    const im = li.querySelector('img');
-    im.onerror = () => { im.style.visibility = 'hidden'; };
-    li.onclick = () => { play(c); $('epgModal').classList.add('hidden'); };
-    ul.appendChild(li);
-    return { c, li };
-  });
-  if (!rows.length) { ul.innerHTML = '<li class="rec-empty">Aucune chaîne dans cette sélection.</li>'; return; }
-
-  // pool de concurrence
-  let idx = 0;
-  const worker = async () => {
-    while (idx < rows.length) {
-      if (token !== epgGuideToken) return; // guide fermé/rafraîchi
-      const { c, li } = rows[idx++];
-      await fillEpgRow(c, li);
-    }
-  };
-  await Promise.all(Array.from({ length: 6 }, worker));
-}
-
-async function fillEpgRow(c, li) {
-  const nowEl = li.querySelector('.epg-now');
-  const nextEl = li.querySelector('.epg-next');
-  const bar = li.querySelector('.epg-bar');
-  const fill = li.querySelector('.epg-bar i');
-  const e = await getChannelEpg(c);
-  if (!e || (!e.cur && !e.next)) { nowEl.textContent = 'Pas de programme'; nowEl.classList.add('muted'); bar.style.display = 'none'; return; }
-  const now = Date.now() / 1000;
-  if (e.cur) {
-    nowEl.textContent = `${epgTime(e.cur.st)} ${e.cur.title}`;
-    if (e.cur.en > e.cur.st) fill.style.width = Math.round(((now - e.cur.st) / (e.cur.en - e.cur.st)) * 100) + '%';
-    else bar.style.display = 'none';
-  } else {
-    nowEl.textContent = 'Hors programme'; nowEl.classList.add('muted'); bar.style.display = 'none';
-  }
-  nextEl.textContent = e.next ? `⏭ ${epgTime(e.next.st)} ${e.next.title}${e.src === 'xmltv' ? '  · guide externe' : ''}` : '';
-}
-
+// Lecture LIVE
 function play(channel) {
   state.current = channel;
+  pushRecent({ type: 'live', id: channel.stream_id, name: channel.name, icon: channel.stream_icon });
+  enterPlayer(channel.name || ('Chaîne ' + channel.stream_id), true);
   $('nowTitle').textContent = channel.name || ('Chaîne ' + channel.stream_id);
-  loadEpg(channel);
   $('overlay').classList.add('hidden');
+  loadEpg(channel);
   $('recBtn').disabled = false;
   $('relayBtn').disabled = false;
-  // Changer de chaîne coupe un éventuel restream (1 seule connexion)
   if (state.relaying) stopRelay();
-  // mark active
-  document.querySelectorAll('#channels li').forEach(li => {
-    li.classList.toggle('active', li.dataset.id == channel.stream_id);
-  });
+  document.querySelectorAll('.chan-card').forEach((c) => c.classList.toggle('active', c.dataset.id == channel.stream_id));
 
   destroyPlayer();
   const v = $('video');
   const tsUrl = streamUrl(channel.stream_id, 'ts');
   const hlsUrl = streamUrl(channel.stream_id, 'm3u8');
 
-  // Prefer MPEG-TS (native Xtream live), fall back to HLS
   if (window.mpegts && mpegts.isSupported()) {
     const p = mpegts.createPlayer(
       { type: 'mpegts', isLive: true, url: tsUrl },
-      {
-        enableWorker: true,
-        // Lecture stable plutôt que basse latence : pas de saut/accélération
-        liveBufferLatencyChasing: false,
-        liveSync: false,
-        lazyLoad: false,
-        autoCleanupSourceBuffer: true,
-        stashInitialSize: 1024 * 1024,   // pré-buffer ~1 Mo avant lecture
-        enableStashBuffer: true
-      }
+      { enableWorker: true, liveBufferLatencyChasing: false, liveSync: false, lazyLoad: false,
+        autoCleanupSourceBuffer: true, stashInitialSize: 1024 * 1024, enableStashBuffer: true }
     );
     p.attachMediaElement(v);
     p.load();
@@ -380,7 +778,6 @@ function playHls(url, retries = 6) {
     hls.on(Hls.Events.ERROR, (_e, data) => {
       if (!data.fatal) return;
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR && retries > 0) {
-        // manifeste pas encore prêt (relais qui démarre) : on retente
         setTimeout(() => { if (state.player === hls) playHls(url, retries - 1); }, 1000);
       } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
         try { hls.recoverMediaError(); } catch {}
@@ -388,18 +785,17 @@ function playHls(url, retries = 6) {
     });
     state.player = hls;
   } else {
-    v.src = url; // Safari native HLS
+    v.src = url;
     suppressResume = false;
     v.play().catch(() => {});
   }
 }
 
-/* ---------- Recording ---------- */
+/* ---------- Enregistrement ---------- */
 async function toggleRecord() {
   const btn = $('recBtn');
   if (state.recId) {
     await window.api.recordStop(state.recId);
-    // UI reset happens on record-stopped event, but reset button immediately
     stopRecUI();
   } else {
     if (!state.current) return;
@@ -411,7 +807,6 @@ async function toggleRecord() {
       state.recId = res.id;
       state.recStartedRelay = res.startedRelay;
       state.recStart = Date.now();
-      // L'enregistrement passe par le relais local : on y bascule aussi la lecture
       if (res.local && !state.relaying) { destroyPlayer(); playHls(res.local); }
       btn.classList.add('recording');
       btn.textContent = '⏹ Arrêter';
@@ -427,10 +822,7 @@ async function toggleRecord() {
   }
 }
 
-// Reprend la lecture directe (1 connexion) sur la chaîne courante
-function resumeDirect() {
-  if (state.current) play(state.current);
-}
+function resumeDirect() { if (state.current) play(state.current); }
 
 function updateRecTime() {
   const s = Math.floor((Date.now() - state.recStart) / 1000);
@@ -460,7 +852,6 @@ async function toggleRelay() {
     const r = await window.api.relayStart(url, state.current.name);
     state.relaying = true;
     state.relayLan = r.lan;
-    // Basculer NOTRE lecture sur le relais local : 1 seule connexion fournisseur
     destroyPlayer();
     playHls(r.local);
     $('relayName').textContent = state.current.name || '—';
@@ -513,7 +904,7 @@ async function startTunnel() {
   }
 }
 
-/* ---------- Détails IPTV ---------- */
+/* ---------- Détails / réglages ---------- */
 function fmtDate(ts) {
   if (!ts) return '—';
   const d = new Date(Number(ts) * 1000);
@@ -552,7 +943,6 @@ async function showInfo() {
     if (!r.canceled) $('recDirVal').textContent = r.dir;
   };
   $('updBtn').onclick = () => window.api.checkUpdate();
-  // statut EPG externe
   const refreshXmltv = async () => {
     try {
       const s = await window.api.xmltvStatus();
@@ -568,101 +958,10 @@ async function showInfo() {
   $('infoModal').classList.remove('hidden');
 }
 
-/* ---------- Wire up ---------- */
-window.addEventListener('DOMContentLoaded', () => {
-  loadFavs();
-  // restore creds
-  try {
-    const saved = JSON.parse(localStorage.getItem('xtream') || 'null');
-    if (saved) { $('srv').value = saved.srv; $('usr').value = saved.usr; $('pwd').value = saved.pwd; }
-  } catch {}
+/* ---------- Réglage export WhatsApp après enregistrement ---------- */
+function getAskWa() { return localStorage.getItem('rec_ask_whatsapp') !== '0'; }
+function setAskWa(on) { localStorage.setItem('rec_ask_whatsapp', on ? '1' : '0'); }
 
-  // Live TV : un clic sur la vidéo ne doit pas mettre en pause -> on relance
-  const vid = $('video');
-  vid.addEventListener('pause', () => {
-    if (suppressResume || vid.ended || !state.current) return;
-    vid.play().catch(() => {});
-  });
-
-  $('connectBtn').onclick = connect;
-  $('pwdToggle').onclick = () => {
-    const p = $('pwd');
-    const show = p.type === 'password';
-    p.type = show ? 'text' : 'password';
-    $('pwdToggle').textContent = show ? '🙈' : '👁';
-    $('pwdToggle').setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
-    p.focus();
-  };
-  ['srv', 'usr', 'pwd'].forEach(id =>
-    $(id).addEventListener('keydown', e => { if (e.key === 'Enter') connect(); }));
-
-  $('catSelect').onchange = (e) => loadChannels(e.target.value);
-  $('search').addEventListener('input', renderChannels);
-  $('qualSelect').addEventListener('change', renderChannels);
-  $('recBtn').onclick = toggleRecord;
-  $('recFolderBtn').onclick = openRecModal;
-  $('recModalClose').onclick = () => $('recModal').classList.add('hidden');
-  $('recOpenFolder').onclick = () => window.api.openRecordingsDir();
-  $('recExportAll').onclick = exportAllWhatsapp;
-  $('recAskWa').checked = getAskWa();
-  $('recAskWa').onchange = (e) => setAskWa(e.target.checked);
-  $('recFilter').onchange = (e) => { recView.channel = e.target.value; recView.page = 1; renderRecPage(); };
-  $('recSearch').addEventListener('input', (e) => { recView.q = e.target.value; recView.page = 1; renderRecPage(); });
-  $('toggleSidebar').onclick = () => $('app').classList.toggle('collapsed');
-  $('infoBtn').onclick = showInfo;
-  $('guideBtn').onclick = openEpgGuide;
-  $('epgClose').onclick = () => { epgGuideToken++; $('epgModal').classList.add('hidden'); };
-  $('epgModal').onclick = (e) => { if (e.target.id === 'epgModal') { epgGuideToken++; $('epgModal').classList.add('hidden'); } };
-  $('epgRefresh').onclick = buildEpgGuide;
-  $('epgSearch').addEventListener('input', (e) => {
-    const q = e.target.value.trim().toLowerCase();
-    document.querySelectorAll('#epgList .epg-item').forEach((li) => {
-      li.style.display = (!q || li.dataset.name.includes(q)) ? '' : 'none';
-    });
-  });
-  $('relayBtn').onclick = toggleRelay;
-  $('relayClose').onclick = () => $('relayModal').classList.add('hidden');
-  $('relayCopy').onclick = async () => {
-    try { await navigator.clipboard.writeText(state.relayLan); $('relayCopy').textContent = 'Copié ✓'; setTimeout(() => $('relayCopy').textContent = 'Copier le lien', 1500); } catch {}
-  };
-  window.api.onRelayStopped(() => { if (state.relaying) stopRelay(); });
-  $('tunnelBtn').onclick = startTunnel;
-  $('tunnelCopy').onclick = async () => {
-    try { await navigator.clipboard.writeText(state.tunnelUrl); $('tunnelCopy').textContent = 'Copié ✓'; setTimeout(() => $('tunnelCopy').textContent = 'Copier le lien public', 1500); } catch {}
-  };
-  window.api.onMainError((d) => { if (d && d.msg) console.error('main:', d.msg); });
-  window.api.onTunnelStatus((d) => { $('tunnelStatus').textContent = d.msg || ''; });
-  window.api.onTunnelStopped(() => { resetTunnelUI(); state.tunnelUrl = ''; });
-  $('infoClose').onclick = () => $('infoModal').classList.add('hidden');
-  $('infoModal').onclick = (e) => { if (e.target.id === 'infoModal') $('infoModal').classList.add('hidden'); };
-  $('logoutBtn').onclick = () => {
-    destroyPlayer();
-    if (state.recId) window.api.recordStop(state.recId);
-    if (state.relaying) stopRelay();
-    stopRecUI();
-    localStorage.removeItem('xtream');
-    $('app').classList.add('hidden');
-    $('login').classList.remove('hidden');
-  };
-
-  window.api.onRecordStopped((data) => {
-    stopRecUI();
-    // si le relais n'avait été lancé que pour enregistrer, on le coupe et on revient au direct
-    if (data.startedRelay && !state.relaying) {
-      window.api.relayStop();
-      resumeDirect();
-    }
-    // mémorise le dernier fichier et propose l'export WhatsApp (si activé dans les réglages)
-    if (data.file) {
-      state.lastRecFile = data.file;
-      if (getAskWa() && confirm('Enregistrement terminé.\n\nL\'exporter maintenant pour WhatsApp (son garanti + 30 fps) ?')) {
-        exportWhatsapp(data.file);
-      }
-    }
-  });
-});
-
-// Convertit un fichier en MP4 compatible WhatsApp. `btn` optionnel = feedback visuel.
 async function exportWhatsapp(file, btn) {
   const old = btn ? btn.textContent : null;
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
@@ -679,19 +978,9 @@ async function exportWhatsapp(file, btn) {
   }
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-// ---------- Réglage : proposer l'export WhatsApp après enregistrement ----------
-// Mémorisé en localStorage ('0' = désactivé). Activé par défaut.
-function getAskWa() { return localStorage.getItem('rec_ask_whatsapp') !== '0'; }
-function setAskWa(on) { localStorage.setItem('rec_ask_whatsapp', on ? '1' : '0'); }
-
-// ---------- Menu "Mes enregistrements" ----------
+/* ---------- Menu "Mes enregistrements" ---------- */
 const recView = { all: [], page: 1, perPage: 8, channel: '', q: '' };
 
-// Déduit le nom de chaîne à partir du nom de fichier "<chaîne>_<date>(_whatsapp).mp4"
 function channelOf(name) {
   let s = name.replace(/\.[^.]+$/, '');
   s = s.replace(/_whatsapp$/i, '');
@@ -713,7 +1002,6 @@ async function loadRecordings() {
   $('recDirHint').textContent = data.dir;
   recView.all = (data.files || []).map((f) => ({ ...f, channel: channelOf(f.name) }));
 
-  // remplit le filtre par chaîne (en conservant la sélection courante)
   const channels = [...new Set(recView.all.map((f) => f.channel))].sort((a, b) => a.localeCompare(b));
   const sel = $('recFilter');
   const prev = recView.channel;
@@ -733,14 +1021,12 @@ function filteredRecordings() {
   );
 }
 
-// Clé de jour (YYYY-MM-DD, fuseau local) pour regrouper les enregistrements
 function dayKey(mtime) {
   const d = new Date(mtime);
   if (isNaN(d.getTime())) return '';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Libellé lisible d'un jour : Aujourd'hui / Hier / date complète
 function dayLabel(mtime) {
   const k = dayKey(mtime);
   if (!k) return 'Date inconnue';
@@ -765,7 +1051,6 @@ function renderRecPage() {
   if (!slice.length) {
     ul.innerHTML = '<li class="rec-empty">Aucun enregistrement.</li>';
   } else {
-    // en-têtes de jour : un titre dès que la date change (liste déjà triée du + récent au + ancien)
     let lastDay = null;
     slice.forEach((f) => {
       const k = dayKey(f.mtime);
@@ -780,7 +1065,6 @@ function renderRecPage() {
     });
   }
 
-  // pagination
   const pager = $('recPager');
   if (list.length <= recView.perPage) { pager.innerHTML = ''; return; }
   pager.innerHTML = '';
@@ -848,7 +1132,6 @@ function recRow(f) {
   return li;
 }
 
-// Convertit tous les fichiers filtrés (non déjà WhatsApp) à la suite
 async function exportAllWhatsapp() {
   const targets = filteredRecordings().filter((f) => !f.isWhatsapp);
   if (!targets.length) { alert('Rien à convertir (déjà fait ou aucun fichier).'); return; }
@@ -864,3 +1147,112 @@ async function exportAllWhatsapp() {
   await loadRecordings();
   setTimeout(() => { btn.textContent = old; }, 2500);
 }
+
+/* ---------- Wire up ---------- */
+window.addEventListener('DOMContentLoaded', () => {
+  loadFavs();
+  loadRecent();
+  try {
+    const saved = JSON.parse(localStorage.getItem('xtream') || 'null');
+    if (saved) { $('srv').value = saved.srv; $('usr').value = saved.usr; $('pwd').value = saved.pwd; }
+  } catch {}
+
+  const vid = $('video');
+  vid.addEventListener('pause', () => {
+    if (suppressResume || vid.ended || !state.current) return;
+    vid.play().catch(() => {});
+  });
+
+  // Login
+  $('connectBtn').onclick = connect;
+  $('pwdToggle').onclick = () => {
+    const p = $('pwd');
+    const show = p.type === 'password';
+    p.type = show ? 'text' : 'password';
+    $('pwdToggle').textContent = show ? '🙈' : '👁';
+    $('pwdToggle').setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+    p.focus();
+  };
+  ['srv', 'usr', 'pwd'].forEach((id) =>
+    $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); }));
+
+  // Nav rail
+  document.querySelectorAll('.rail .nav[data-view]').forEach((b) => {
+    b.onclick = () => {
+      const v = b.dataset.view;
+      if (v === 'recordings') { openRecModal(); return; }
+      showView(v);
+    };
+  });
+  $('navInfo').onclick = showInfo;
+  $('navLogout').onclick = () => {
+    destroyPlayer();
+    if (state.recId) window.api.recordStop(state.recId);
+    if (state.relaying) stopRelay();
+    stopRecUI();
+    localStorage.removeItem('xtream');
+    $('app').classList.add('hidden');
+    $('login').classList.remove('hidden');
+  };
+  $('railToggle').onclick = () => $('app').classList.toggle('rail-collapsed');
+
+  // Recherche + filtres
+  $('search').addEventListener('input', onSearch);
+  $('catSelect').onchange = (e) => loadChannels(e.target.value);
+  $('qualSelect').addEventListener('change', renderLiveGrid);
+  $('vodCat').onchange = renderMovies;
+  $('seriesCat').onchange = renderSeries;
+  $('guideCat').onchange = buildGuideGrid;
+  $('guideRefresh').onclick = () => { state.epgCache = {}; buildGuideGrid(); };
+
+  // Lecteur
+  $('playerBack').onclick = () => showView(state.browse);
+  $('recBtn').onclick = toggleRecord;
+  $('relayBtn').onclick = toggleRelay;
+
+  // Séries
+  $('seriesClose').onclick = () => $('seriesModal').classList.add('hidden');
+  $('seriesModal').onclick = (e) => { if (e.target.id === 'seriesModal') $('seriesModal').classList.add('hidden'); };
+  $('seasonSelect').onchange = (e) => renderEpisodes(e.target.value);
+
+  // Enregistrements
+  $('recModalClose').onclick = () => $('recModal').classList.add('hidden');
+  $('recOpenFolder').onclick = () => window.api.openRecordingsDir();
+  $('recExportAll').onclick = exportAllWhatsapp;
+  $('recAskWa').checked = getAskWa();
+  $('recAskWa').onchange = (e) => setAskWa(e.target.checked);
+  $('recFilter').onchange = (e) => { recView.channel = e.target.value; recView.page = 1; renderRecPage(); };
+  $('recSearch').addEventListener('input', (e) => { recView.q = e.target.value; recView.page = 1; renderRecPage(); });
+
+  // Restream / tunnel
+  $('relayClose').onclick = () => $('relayModal').classList.add('hidden');
+  $('relayCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText(state.relayLan); $('relayCopy').textContent = 'Copié ✓'; setTimeout(() => $('relayCopy').textContent = 'Copier le lien LAN', 1500); } catch {}
+  };
+  window.api.onRelayStopped(() => { if (state.relaying) stopRelay(); });
+  $('tunnelBtn').onclick = startTunnel;
+  $('tunnelCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText(state.tunnelUrl); $('tunnelCopy').textContent = 'Copié ✓'; setTimeout(() => $('tunnelCopy').textContent = 'Copier le lien public', 1500); } catch {}
+  };
+  window.api.onMainError((d) => { if (d && d.msg) console.error('main:', d.msg); });
+  window.api.onTunnelStatus((d) => { $('tunnelStatus').textContent = d.msg || ''; });
+  window.api.onTunnelStopped(() => { resetTunnelUI(); state.tunnelUrl = ''; });
+
+  // Infos
+  $('infoClose').onclick = () => $('infoModal').classList.add('hidden');
+  $('infoModal').onclick = (e) => { if (e.target.id === 'infoModal') $('infoModal').classList.add('hidden'); };
+
+  window.api.onRecordStopped((data) => {
+    stopRecUI();
+    if (data.startedRelay && !state.relaying) {
+      window.api.relayStop();
+      resumeDirect();
+    }
+    if (data.file) {
+      state.lastRecFile = data.file;
+      if (getAskWa() && confirm('Enregistrement terminé.\n\nL\'exporter maintenant pour WhatsApp (son garanti + 30 fps) ?')) {
+        exportWhatsapp(data.file);
+      }
+    }
+  });
+});

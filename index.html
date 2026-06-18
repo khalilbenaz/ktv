@@ -11,7 +11,7 @@
   <!-- LOGIN -->
   <div id="login" class="login">
     <div class="login-card">
-      <h1>IPTV Live</h1>
+      <div class="login-brand"><span class="logo">📡</span> IPTV Live</div>
       <p class="sub">Connexion Xtream Codes</p>
       <input id="srv" type="text" placeholder="http://serveur:port" autocomplete="off" />
       <input id="usr" type="text" placeholder="Utilisateur" autocomplete="off" />
@@ -26,48 +26,108 @@
 
   <!-- APP -->
   <div id="app" class="app hidden">
-    <aside class="sidebar">
-      <div class="side-head">
-        <input id="search" type="text" placeholder="Rechercher une chaîne…" />
-      </div>
-      <select id="catSelect"></select>
-      <select id="qualSelect">
-        <option value="">Toutes qualités</option>
-        <option value="8K">8K</option>
-        <option value="4K">4K / UHD</option>
-        <option value="FHD">FHD (1080p)</option>
-        <option value="HD">HD (720p)</option>
-        <option value="SD">SD</option>
-      </select>
-      <ul id="channels" class="channels"></ul>
-      <div class="side-foot">
-        <button id="guideBtn" class="ghost">🗓 Guide</button>
-        <button id="infoBtn" class="ghost">ℹ️ Infos</button>
-        <button id="recFolderBtn" class="ghost">📼 Enreg.</button>
-        <button id="logoutBtn" class="ghost">Quitter</button>
-      </div>
+    <!-- NAV RAIL -->
+    <aside class="rail" id="rail">
+      <div class="brand"><span class="logo">📡</span> <span class="brand-txt">IPTV Live</span></div>
+      <button class="nav active" data-view="home"><span class="ic">🏠</span> <span class="lbl">Accueil</span></button>
+      <button class="nav" data-view="live"><span class="ic">📺</span> <span class="lbl">Live TV</span></button>
+      <button class="nav" data-view="movies"><span class="ic">🎬</span> <span class="lbl">Films</span></button>
+      <button class="nav" data-view="series"><span class="ic">🎞️</span> <span class="lbl">Séries</span></button>
+      <button class="nav" data-view="guide"><span class="ic">🗓️</span> <span class="lbl">Guide TV</span></button>
+      <button class="nav" data-view="recordings"><span class="ic">⏺️</span> <span class="lbl">Enregistrements</span></button>
+      <div class="spacer"></div>
+      <button class="nav" id="navInfo"><span class="ic">⚙️</span> <span class="lbl">Réglages</span></button>
+      <button class="nav" id="navLogout"><span class="ic">🚪</span> <span class="lbl">Quitter</span></button>
     </aside>
 
-    <main class="main">
-      <div class="player-wrap">
-        <button id="toggleSidebar" class="toggle" title="Réduire / afficher la liste">⟨</button>
-        <video id="video" controls autoplay playsinline></video>
-        <div id="overlay" class="overlay">Sélectionnez une chaîne</div>
+    <!-- MAIN -->
+    <div class="main">
+      <div class="topbar">
+        <button id="railToggle" class="icon-btn" title="Réduire / afficher le menu">☰</button>
+        <div class="search-wrap">
+          <span class="search-ic">🔍</span>
+          <input id="search" type="text" placeholder="Rechercher…" autocomplete="off" />
+        </div>
+        <span class="chip" id="acctChip"><span class="dot"></span> <span id="acctTxt">—</span></span>
       </div>
-      <div class="bar">
-        <div class="now">
-          <div class="now-line">
-            <span id="nowTitle">—</span>
-            <span id="recDot" class="rec-dot hidden">● REC <span id="recTime"></span></span>
+
+      <div class="views" id="views">
+        <!-- HOME -->
+        <section class="view active" id="view-home">
+          <div id="homeRows" class="rows"></div>
+        </section>
+
+        <!-- LIVE -->
+        <section class="view" id="view-live">
+          <div class="subbar">
+            <select id="catSelect" title="Catégorie"></select>
+            <select id="qualSelect" title="Qualité">
+              <option value="">Toutes qualités</option>
+              <option value="8K">8K</option>
+              <option value="4K">4K / UHD</option>
+              <option value="FHD">FHD (1080p)</option>
+              <option value="HD">HD (720p)</option>
+              <option value="SD">SD</option>
+            </select>
+            <span class="count" id="liveCount"></span>
           </div>
-          <span id="nowEpg" class="now-epg"></span>
-        </div>
-        <div class="actions">
-          <button id="relayBtn" disabled>📡 Restreamer</button>
-          <button id="recBtn" disabled>⏺ Enregistrer</button>
-        </div>
+          <div id="liveGrid" class="chan-grid"></div>
+        </section>
+
+        <!-- MOVIES -->
+        <section class="view" id="view-movies">
+          <div class="subbar">
+            <select id="vodCat" title="Catégorie"></select>
+            <span class="count" id="movieCount"></span>
+          </div>
+          <div id="movieGrid" class="poster-grid"></div>
+        </section>
+
+        <!-- SERIES -->
+        <section class="view" id="view-series">
+          <div class="subbar">
+            <select id="seriesCat" title="Catégorie"></select>
+            <span class="count" id="seriesCount"></span>
+          </div>
+          <div id="seriesGrid" class="poster-grid"></div>
+        </section>
+
+        <!-- GUIDE -->
+        <section class="view" id="view-guide">
+          <div class="subbar">
+            <select id="guideCat" title="Catégorie"></select>
+            <button id="guideRefresh" class="ghost" title="Rafraîchir">↻</button>
+            <span class="count" id="guideHint"></span>
+          </div>
+          <div id="guideGrid" class="guide"></div>
+        </section>
+
+        <!-- PLAYER -->
+        <section class="view" id="view-player">
+          <div class="player-top">
+            <button id="playerBack" class="icon-btn">‹ Retour</button>
+            <span id="playerCrumb" class="crumb">—</span>
+          </div>
+          <div class="player-wrap">
+            <video id="video" controls autoplay playsinline></video>
+            <div id="overlay" class="overlay">Sélectionnez un contenu</div>
+          </div>
+          <div class="bar">
+            <div class="now">
+              <div class="now-line">
+                <span id="nowTitle">—</span>
+                <span id="recDot" class="rec-dot hidden">● REC <span id="recTime"></span></span>
+              </div>
+              <span id="nowEpg" class="now-epg"></span>
+            </div>
+            <div class="actions" id="liveActions">
+              <button id="relayBtn" disabled>📡 Restreamer</button>
+              <button id="recBtn" disabled>⏺ Enregistrer</button>
+            </div>
+          </div>
+        </section>
       </div>
-    </main>
+    </div>
   </div>
 
   <!-- MODAL RESTREAM -->
@@ -96,20 +156,22 @@
     </div>
   </div>
 
-  <!-- MODAL GUIDE EPG -->
-  <div id="epgModal" class="modal hidden">
+  <!-- MODAL DÉTAIL SÉRIE -->
+  <div id="seriesModal" class="modal hidden">
     <div class="modal-card wide">
       <div class="modal-head">
-        <h2>🗓 Guide des programmes</h2>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input id="epgSearch" type="text" placeholder="Rechercher…" autocomplete="off" />
-          <button id="epgRefresh" class="ghost" title="Rafraîchir">↻</button>
-          <button id="epgClose" class="modal-x">✕</button>
-        </div>
+        <h2 id="seriesTitle">Série</h2>
+        <button id="seriesClose" class="modal-x">✕</button>
       </div>
       <div class="modal-body">
-        <p class="hint" id="epgHint">—</p>
-        <ul id="epgList" class="epg-list"></ul>
+        <div class="series-hero">
+          <div class="series-cover" id="seriesCover"></div>
+          <div class="series-meta">
+            <p id="seriesPlot" class="hint"></p>
+            <select id="seasonSelect" title="Saison"></select>
+          </div>
+        </div>
+        <ul id="episodeList" class="episodes"></ul>
       </div>
     </div>
   </div>
