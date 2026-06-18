@@ -157,6 +157,17 @@
     </div>
   </div>
 
+  <!-- TIROIR TÉLÉCHARGEMENTS -->
+  <div id="dlTray" class="dl-tray hidden">
+    <div class="dl-head"><span>⬇ Téléchargements</span>
+      <div>
+        <button id="dlOpenFolder" class="dl-mini" title="Ouvrir le dossier">📁</button>
+        <button id="dlHide" class="dl-mini" title="Masquer">✕</button>
+      </div>
+    </div>
+    <div id="dlList"></div>
+  </div>
+
   <!-- MODAL RESTREAM -->
   <div id="relayModal" class="modal hidden">
     <div class="modal-card">
@@ -195,7 +206,10 @@
           <div class="series-cover" id="seriesCover"></div>
           <div class="series-meta">
             <p id="seriesPlot" class="hint"></p>
-            <select id="seasonSelect" title="Saison"></select>
+            <div class="series-actions">
+              <select id="seasonSelect" title="Saison"></select>
+              <button id="dlSeasonBtn" class="ghost">⬇ Télécharger la saison</button>
+            </div>
           </div>
         </div>
         <ul id="episodeList" class="episodes"></ul>

@@ -188,6 +188,7 @@ function showView(name) {
   if (leaving === 'player' && name !== 'player') {
     destroyPlayer();
     state.current = null;
+    state.playQueue = null;
     $('overlay').classList.remove('hidden');
     $('overlay').textContent = 'Sélectionnez un contenu';
   }
@@ -393,7 +394,8 @@ function renderMovies() {
   for (const m of items.slice(0, 600)) {
     frag.appendChild(posterCard({
       title: m.name, cover: m.stream_icon || m.cover, rating: m.rating,
-      onClick: () => playMovie(m)
+      onClick: () => playMovie(m),
+      onDownload: () => { const ext = m.container_extension || 'mp4'; startDownload(vodUrl(m.stream_id, ext), m.name || 'Film', ext); }
     }));
   }
   grid.appendChild(frag);
@@ -470,31 +472,58 @@ async function openSeries(s) {
   }
 }
 
+let curSeason = null;
 function renderEpisodes(season) {
+  curSeason = season;
   const eps = (curSeries.episodes && curSeries.episodes[season]) || [];
+  const cover = curSeries.cover || curSeries.stream_icon;
   const ul = $('episodeList');
   ul.innerHTML = '';
-  for (const ep of eps) {
+  eps.forEach((ep, i) => {
     const li = document.createElement('li');
     li.className = 'ep-item';
     const info = ep.info || {};
     const dur = info.duration || '';
-    li.innerHTML = `<span class="ep-n">${escapeHtml(String(ep.episode_num || ''))}</span>` +
-      `<div class="ep-meta"><span class="ep-t">${escapeHtml(ep.title || ('Épisode ' + ep.episode_num))}</span>` +
-      `<span class="ep-s">${escapeHtml(dur)}</span></div><span class="ep-play">▶</span>`;
-    li.onclick = () => {
-      const ext = ep.container_extension || 'mp4';
-      const label = `${curSeries.name} · S${season}E${ep.episode_num}`;
-      pushRecent({ type: 'series', id: ep.id, name: label, icon: curSeries.cover || curSeries.stream_icon, ext });
-      $('seriesModal').classList.add('hidden');
-      playMedia(seriesUrl(ep.id, ext), label, false, '🎞️ Séries');
-    };
+    const meta = document.createElement('div');
+    meta.className = 'ep-meta';
+    meta.innerHTML = `<span class="ep-t">${escapeHtml(ep.title || ('Épisode ' + ep.episode_num))}</span><span class="ep-s">${escapeHtml(dur)}</span>`;
+    const n = document.createElement('span');
+    n.className = 'ep-n'; n.textContent = String(ep.episode_num || (i + 1));
+    const dl = document.createElement('button');
+    dl.className = 'ep-dl'; dl.textContent = '⬇'; dl.title = 'Télécharger cet épisode';
+    dl.onclick = (ev) => { ev.stopPropagation(); const ext = ep.container_extension || 'mp4'; startDownload(seriesUrl(ep.id, ext), `${curSeries.name} S${season}E${ep.episode_num}`, ext); };
+    const play = document.createElement('span');
+    play.className = 'ep-play'; play.textContent = '▶';
+    li.append(n, meta, dl, play);
+    li.onclick = () => playEpisodeAt({ eps, idx: i, season, name: curSeries.name, cover });
     ul.appendChild(li);
+  });
+}
+
+// Lance un épisode et mémorise la file pour l'enchaînement automatique
+function playEpisodeAt(q) {
+  const ep = q.eps[q.idx];
+  if (!ep) return;
+  const ext = ep.container_extension || 'mp4';
+  const label = `${q.name} · S${q.season}E${ep.episode_num}`;
+  pushRecent({ type: 'series', id: ep.id, name: label, icon: q.cover, ext });
+  $('seriesModal').classList.add('hidden');
+  playMedia(seriesUrl(ep.id, ext), label, false, '🎞️ Séries');
+  state.playQueue = q; // après playMedia (qui réinitialise la file)
+}
+
+// Télécharge tous les épisodes de la saison courante
+function downloadSeason() {
+  const eps = (curSeries.episodes && curSeries.episodes[curSeason]) || [];
+  if (!eps.length) return;
+  for (const ep of eps) {
+    const ext = ep.container_extension || 'mp4';
+    startDownload(seriesUrl(ep.id, ext), `${curSeries.name} S${curSeason}E${ep.episode_num}`, ext);
   }
 }
 
 /* ---------- Carte affiche (films/séries) ---------- */
-function posterCard({ title, cover, rating, onClick }) {
+function posterCard({ title, cover, rating, onClick, onDownload }) {
   const card = document.createElement('div');
   card.className = 'poster';
   const img = document.createElement('div');
@@ -509,6 +538,12 @@ function posterCard({ title, cover, rating, onClick }) {
     const r = document.createElement('span');
     r.className = 'p-rate'; r.textContent = '★ ' + Number(rating).toFixed(1);
     img.appendChild(r);
+  }
+  if (onDownload) {
+    const dl = document.createElement('button');
+    dl.className = 'p-dl'; dl.textContent = '⬇'; dl.title = 'Télécharger';
+    dl.onclick = (ev) => { ev.stopPropagation(); onDownload(); };
+    img.appendChild(dl);
   }
   const t = document.createElement('div');
   t.className = 'p-title'; t.textContent = title || '—';
@@ -713,6 +748,7 @@ function destroyPlayer() {
 // Lecture VOD / épisode (fichier direct)
 function playMedia(url, title, isLive, crumb) {
   state.current = null;
+  state.playQueue = null;
   enterPlayer(crumb || title, false);
   $('nowTitle').textContent = title || '—';
   $('nowEpg').textContent = '';
@@ -783,6 +819,7 @@ async function loadEpg(channel) {
 // Lecture LIVE
 function play(channel) {
   state.current = channel;
+  state.playQueue = null;
   pushRecent({ type: 'live', id: channel.stream_id, name: channel.name, icon: channel.stream_icon });
   enterPlayer(channel.name || ('Chaîne ' + channel.stream_id), true);
   $('nowTitle').textContent = channel.name || ('Chaîne ' + channel.stream_id);
@@ -1190,6 +1227,33 @@ async function exportAllWhatsapp() {
   setTimeout(() => { btn.textContent = old; }, 2500);
 }
 
+/* ---------- Téléchargements (tiroir) ---------- */
+const dlItems = {}; // id -> { el, bar, pct, cancel }
+
+function startDownload(url, name, ext) {
+  window.api.downloadStart(url, name, ext).then((r) => {
+    if (r && r.id) addDlItem(r.id, r.name || name);
+  }).catch(() => {});
+}
+
+function addDlItem(id, name) {
+  $('dlTray').classList.remove('hidden');
+  const el = document.createElement('div');
+  el.className = 'dl-item';
+  el.innerHTML = `<div class="dl-row"><span class="dl-name">${escapeHtml(name)}</span><span class="dl-pct">0%</span>` +
+    `<button class="dl-cancel" title="Annuler">✕</button></div><div class="dl-bar"><i></i></div>`;
+  const cancel = el.querySelector('.dl-cancel');
+  cancel.onclick = () => { window.api.downloadCancel(id); removeDlItem(id); };
+  $('dlList').prepend(el);
+  dlItems[id] = { el, bar: el.querySelector('.dl-bar i'), pct: el.querySelector('.dl-pct'), cancel };
+}
+
+function removeDlItem(id) {
+  const it = dlItems[id];
+  if (it) { it.el.remove(); delete dlItems[id]; }
+  if (!Object.keys(dlItems).length) $('dlTray').classList.add('hidden');
+}
+
 /* ---------- Wire up ---------- */
 window.addEventListener('DOMContentLoaded', () => {
   loadFavs();
@@ -1207,6 +1271,11 @@ window.addEventListener('DOMContentLoaded', () => {
   vid.addEventListener('pause', () => {
     if (suppressResume || vid.ended || !state.current) return;
     vid.play().catch(() => {});
+  });
+  // Enchaînement automatique de l'épisode suivant
+  vid.addEventListener('ended', () => {
+    const q = state.playQueue;
+    if (q && q.idx + 1 < q.eps.length) playEpisodeAt({ ...q, idx: q.idx + 1 });
   });
 
   // Login
@@ -1255,6 +1324,26 @@ window.addEventListener('DOMContentLoaded', () => {
   $('seriesClose').onclick = () => $('seriesModal').classList.add('hidden');
   $('seriesModal').onclick = (e) => { if (e.target.id === 'seriesModal') $('seriesModal').classList.add('hidden'); };
   $('seasonSelect').onchange = (e) => renderEpisodes(e.target.value);
+  $('dlSeasonBtn').onclick = downloadSeason;
+
+  // Téléchargements
+  window.api.onDownloadProgress((d) => {
+    const it = dlItems[d.id];
+    if (it) { it.bar.style.width = d.pct + '%'; it.pct.textContent = d.pct + '%'; }
+  });
+  window.api.onDownloadDone((d) => {
+    const it = dlItems[d.id];
+    if (!it) return;
+    if (d.ok) {
+      it.bar.style.width = '100%'; it.pct.textContent = '✓'; it.el.classList.add('done');
+      it.cancel.textContent = '✓';
+      setTimeout(() => removeDlItem(d.id), 5000);
+    } else {
+      it.pct.textContent = '⚠'; it.el.classList.add('failed'); it.el.title = d.error || 'échec';
+    }
+  });
+  $('dlOpenFolder').onclick = () => window.api.openDownloadsDir();
+  $('dlHide').onclick = () => $('dlTray').classList.add('hidden');
 
   // Enregistrements
   $('recOpenFolder').onclick = () => window.api.openRecordingsDir();

@@ -400,6 +400,99 @@ function sanitize(name) {
   return (name || 'stream').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
 }
 
+// ---------- Téléchargements (films / épisodes) ----------
+function downloadsDir() {
+  const s = getSettings();
+  const dir = s.dlDir || path.join(app.getPath('home'), 'IPTV Live Downloads');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  return dir;
+}
+function sendDl(channel, payload) { try { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); } catch {} }
+
+const downloads = new Map(); // id -> { req, out, part, file, aborted }
+let dlSeq = 0;
+
+ipcMain.handle('downloads-dir', () => downloadsDir());
+ipcMain.handle('open-downloads-dir', () => { shell.openPath(downloadsDir()); return { ok: true }; });
+ipcMain.handle('list-downloads', () => {
+  const dir = downloadsDir();
+  try {
+    const files = fs.readdirSync(dir)
+      .filter((f) => !f.startsWith('.') && !f.endsWith('.part'))
+      .map((name) => { const p = path.join(dir, name); const st = fs.statSync(p); return { name, path: p, size: st.size, mtime: st.mtimeMs }; })
+      .sort((a, b) => b.mtime - a.mtime);
+    return { dir, files };
+  } catch { return { dir, files: [] }; }
+});
+
+ipcMain.handle('download-start', (e, { url, name, ext } = {}) => {
+  const id = 'dl' + (++dlSeq);
+  const safe = sanitize(name) + '.' + String(ext || 'mp4').replace(/[^a-z0-9]/gi, '').slice(0, 5);
+  const file = path.join(downloadsDir(), safe);
+  const part = file + '.part';
+  const entry = { aborted: false, file, part };
+  downloads.set(id, entry);
+  httpDownload(id, url, entry, 0);
+  return { id, file, name: safe };
+});
+
+ipcMain.handle('download-cancel', (e, { id } = {}) => {
+  const entry = downloads.get(id);
+  if (entry) {
+    entry.aborted = true;
+    try { entry.req && entry.req.destroy(); } catch {}
+    try { entry.out && entry.out.destroy(); } catch {}
+    try { fs.unlinkSync(entry.part); } catch {}
+    downloads.delete(id);
+  }
+  return { ok: true };
+});
+
+function httpDownload(id, url, entry, redirects) {
+  const mod = url.startsWith('https') ? https : http;
+  let req;
+  try { req = mod.get(url, { headers: { 'User-Agent': 'IPTV-Live' } }, (res) => {
+    if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects < 10) {
+      res.resume();
+      return httpDownload(id, new URL(res.headers.location, url).href, entry, redirects + 1);
+    }
+    if (res.statusCode !== 200) {
+      res.resume();
+      if (!entry.aborted) sendDl('download-done', { id, ok: false, error: 'HTTP ' + res.statusCode });
+      downloads.delete(id);
+      return;
+    }
+    const total = Number(res.headers['content-length']) || 0;
+    let received = 0, lastPct = -1;
+    const out = fs.createWriteStream(entry.part);
+    entry.out = out;
+    res.on('data', (c) => {
+      received += c.length;
+      const pct = total ? Math.round(received / total * 100) : 0;
+      if (pct !== lastPct) { lastPct = pct; sendDl('download-progress', { id, received, total, pct }); }
+    });
+    res.pipe(out);
+    out.on('finish', () => out.close(() => {
+      if (entry.aborted) { try { fs.unlinkSync(entry.part); } catch {} return; }
+      try { fs.renameSync(entry.part, entry.file); } catch (err) { sendDl('download-done', { id, ok: false, error: err.message }); downloads.delete(id); return; }
+      sendDl('download-done', { id, ok: true, file: entry.file });
+      downloads.delete(id);
+    }));
+  }); } catch (err) {
+    sendDl('download-done', { id, ok: false, error: err.message });
+    downloads.delete(id);
+    return;
+  }
+  entry.req = req;
+  req.on('error', (err) => {
+    if (entry.aborted) return;
+    try { entry.out && entry.out.destroy(); } catch {}
+    try { fs.unlinkSync(entry.part); } catch {}
+    sendDl('download-done', { id, ok: false, error: err.message });
+    downloads.delete(id);
+  });
+}
+
 // Start recording a stream URL with ffmpeg (stream copy -> mp4)
 ipcMain.handle('record-start', async (e, { url, name }) => {
   const id = String(Date.now()) + Math.floor(Math.random() * 1000);
