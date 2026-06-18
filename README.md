@@ -1,6 +1,6 @@
 # KTV
 
-Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** — interface moderne façon UHF : **Live TV, Films (VOD), Séries, Guide TV (EPG)**, enregistrement, restream et téléchargements.
+Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** — interface moderne par sections : **Live TV, Films (VOD), Séries, Guide TV (EPG)**, enregistrement, restream et téléchargements.
 
 **▶︎ [Télécharger la dernière version (macOS Apple Silicon)](https://github.com/khalilbenaz/ktv/releases/latest)**
 
