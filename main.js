@@ -43,7 +43,7 @@ function publishPointer(streamUrl) {
     r.write(body); r.end();
   } catch {}
 }
-const relay = { proc: null, server: null, dir: null, url: '', stopping: false, restarts: 0, restartTimer: null, stableTimer: null };
+const relay = { proc: null, server: null, dir: null, url: '', transcode: false, stopping: false, restarts: 0, restartTimer: null, stableTimer: null };
 const tunnel = { proc: null, url: '' };
 
 let ffmpegPath = require('ffmpeg-static');
@@ -806,7 +806,7 @@ function stopRelay() {
 // Lance (ou relance) le ffmpeg du relais. Reconnexion auto si le flux fournisseur
 // hoquette, et redémarrage si ffmpeg meurt malgré tout (tant que le relais est voulu actif).
 function spawnRelayFfmpeg() {
-  const args = [
+  const input = [
     '-hide_banner', '-loglevel', 'error',
     '-user_agent', 'IPTV-Live',
     // résilience du flux montant (HTTP) : on ne lâche pas au moindre hoquet
@@ -815,11 +815,21 @@ function spawnRelayFfmpeg() {
     '-reconnect_streamed', '1',
     '-reconnect_delay_max', '5',
     '-rw_timeout', '15000000',
-    '-i', relay.url,
-    '-c', 'copy',
+  ];
+  // Mode transcodage matériel (chaînes 4K HEVC 10 bits que le lecteur ne décode
+  // pas) : décodage + encodage H.264 via VideoToolbox (M1/M2/M3). Sinon copie.
+  const codec = relay.transcode
+    ? ['-hwaccel', 'videotoolbox',
+       '-i', relay.url,
+       '-c:v', 'h264_videotoolbox', '-b:v', '20M', '-realtime', '1', '-pix_fmt', 'yuv420p',
+       '-c:a', 'aac', '-b:a', '128k', '-ac', '2']
+    : ['-i', relay.url, '-c', 'copy'];
+  const args = [
+    ...input,
+    ...codec,
     '-f', 'hls',
     '-hls_time', '2',
-    '-hls_list_size', '8',
+    '-hls_list_size', '10',          // ~20 s de flux dispo (était 8 ≈ 16 s)
     '-hls_flags', 'delete_segments+append_list+omit_endlist',
     '-hls_segment_filename', path.join(relay.dir, 'seg%05d.ts'),
     path.join(relay.dir, 'index.m3u8')
@@ -851,12 +861,13 @@ const LOCAL_URL = `http://127.0.0.1:${RELAY_PORT}/index.m3u8`;
 
 // Démarre le relais : 1 SEULE connexion fournisseur -> HLS local servi en HTTP.
 // Lecture, enregistrement et restream se branchent tous dessus = 1 connexion totale.
-async function startRelayInternal(url, name) {
+async function startRelayInternal(url, name, opts = {}) {
   if (relay.proc) {
     // déjà actif (même chaîne) : on réutilise
     const ip = lanIp();
     return { local: LOCAL_URL, lan: `http://${ip}:${RELAY_PORT}/index.m3u8`, ip, port: RELAY_PORT, name, reused: true };
   }
+  relay.transcode = !!opts.transcode;
   const dir = path.join(os.tmpdir(), 'iptv-relay');
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   fs.mkdirSync(dir, { recursive: true });
@@ -919,6 +930,58 @@ function waitForFile(file, timeoutMs) {
 }
 
 ipcMain.handle('relay-start', (e, { url, name }) => startRelayInternal(url, name));
+
+// Lecture 4K : on fait transiter la chaîne par le relais en transcodage matériel
+// (HEVC 10 bits → H.264) car le lecteur ne décode pas ce format. Gère le switch.
+ipcMain.handle('live-transcode-tune', async (e, { url, name }) => {
+  try {
+    if (relay.proc && relay.url === url && relay.transcode) {
+      return { local: LOCAL_URL, reused: true };
+    }
+    if (relay.proc && (relay.url !== url || !relay.transcode)) {
+      if (recordings.size > 0) return { error: "Un enregistrement est en cours." };
+      stopRelay();
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    await startRelayInternal(url, name, { transcode: true });
+    return { local: LOCAL_URL };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Sonde rapide d'un flux : renvoie la VRAIE résolution vidéo (pour décider si
+// une chaîne est réellement de l'UHD et mérite le transcodage). On tue ffmpeg
+// dès que la ligne "Video: …WxH" est lue (~2-4 s). Ouvre 1 connexion le temps
+// de la sonde puis la referme.
+ipcMain.handle('probe-stream', (e, { url }) => new Promise((resolve) => {
+  let buf = '';
+  let p;
+  try {
+    p = spawn(ffmpegPath, ['-hide_banner', '-user_agent', 'IPTV-Live',
+      '-analyzeduration', '3000000', '-probesize', '3000000', '-i', url]);
+  } catch { return resolve({ error: true }); }
+  const finish = () => {
+    const m = buf.match(/Video:[^\n]*?(\d{3,5})x(\d{3,5})/);
+    const codec = (buf.match(/Video:\s*([a-z0-9]+)/i) || [])[1] || '';
+    const pix = (buf.match(/Video:[^\n]*?(yuv\w+)/i) || [])[1] || '';
+    resolve(m ? { width: +m[1], height: +m[2], codec, pix } : { error: true });
+  };
+  const t = setTimeout(() => { try { p.kill('SIGKILL'); } catch {} }, 12000);
+  p.stderr.on('data', (d) => {
+    buf += d.toString();
+    if (/Video:[^\n]*\d{3,5}x\d{3,5}/.test(buf)) { clearTimeout(t); try { p.kill('SIGKILL'); } catch {} }
+  });
+  p.on('close', () => { clearTimeout(t); finish(); });
+  p.on('error', () => { clearTimeout(t); resolve({ error: true }); });
+}));
+
+// Arrête le relais s'il n'est plus utile (quitte une chaîne 4K / repasse en
+// direct), sauf si un enregistrement ou un restream l'utilise encore.
+ipcMain.handle('relay-stop-idle', () => {
+  if (recordings.size === 0) { stopRelay(); stopTunnel(); return { stopped: true }; }
+  return { stopped: false };
+});
 
 ipcMain.handle('relay-stop', () => {
   // ne pas couper si un enregistrement est en cours sur le relais

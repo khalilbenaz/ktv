@@ -17,6 +17,7 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** — interface moderne pa
 ### Lecture
 - Connexion Xtream (URL / utilisateur / mot de passe mémorisés, **reconnexion automatique** au lancement, bouton afficher/masquer le mot de passe).
 - **Live TV** en grille de cartes (logo + qualité 8K/4K/FHD/HD/SD + EPG *now/next*), lecture 1 clic (`mpegts.js` natif Xtream, fallback `hls.js`).
+- **Vraie 4K automatique** : le lecteur intégré ne décode pas le HEVC 10 bits 2160p. KTV **sonde la résolution réelle** au lancement et, uniquement pour les flux **réellement ≥ 2160p**, transcode en **H.264 matériel** (VideoToolbox, Apple Silicon) via le relais. Les fausses « 4K » (chaînes 1080p/720p mal étiquetées) restent en lecture directe. Décision mémorisée par chaîne (instantané ensuite).
 - **Sidebar chaînes dans le lecteur** : à droite du player, liste repliable des chaînes de la **même catégorie** (logo + programme en cours) pour **zapper sans revenir à la liste complète**.
 - **Films (VOD)** et **Séries** (saisons/épisodes) — catégories françaises.
 - **Enchaînement automatique** de l'épisode suivant.

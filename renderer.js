@@ -191,6 +191,8 @@ function showView(name) {
   // Quitter le lecteur coupe la lecture (sinon le son continue en arrière-plan)
   if (leaving === 'player' && name !== 'player') {
     destroyPlayer();
+    // libère le relais 4K (si pas d'enregistrement/restream en cours)
+    if (!state.relaying && !state.recId) { try { window.api.relayStopIdle(); } catch {} }
     state.current = null;
     state.playQueue = null;
     $('overlay').classList.remove('hidden');
@@ -905,7 +907,7 @@ async function loadEpg(channel) {
 }
 
 // Lecture LIVE
-function play(channel) {
+async function play(channel) {
   // Garde "1 connexion" : si un enregistrement tourne, on ne peut pas ouvrir
   // un 2e flux fournisseur.
   if (state.recId) {
@@ -942,16 +944,62 @@ function play(channel) {
   document.querySelectorAll('.chan-card').forEach((c) => c.classList.toggle('active', c.dataset.id == channel.stream_id));
   buildPlayerSidebar(channel);
 
+  // Décision AUTOMATIQUE : on transcode seulement si le flux est RÉELLEMENT
+  // de l'UHD (≥ 2160p), vérifié en sondant la vraie résolution. Le nom n'est
+  // qu'un pré-filtre (des milliers de chaînes "4K" sont en fait du 1080p).
+  if (nameHintUhd(channel)) {
+    destroyPlayer();                                   // libère la connexion avant la sonde
+    $('overlay').classList.remove('hidden');
+    $('overlay').textContent = '⚙️ Analyse du flux…';
+    const transcode = await needsTranscode(channel);
+    if (state.current !== channel) return;             // l'utilisateur a déjà zappé
+    $('overlay').classList.add('hidden');
+    if (transcode) { loadTranscodedLive(channel); return; }
+  }
+
+  // Lecture directe : on libère un éventuel relais 4K resté actif.
+  if (!state.recId && !state.relaying) { try { window.api.relayStopIdle(); } catch {} }
+  loadDirect(channel);
+}
+
+// Pré-filtre léger : le nom évoque-t-il de l'UHD ? (évite de sonder les
+// dizaines de milliers de chaînes sans le moindre indice). On ignore les
+// préfixes catégorie ("8k:", "fr:"…) et les marqueurs HD/SD explicites.
+function nameHintUhd(ch) {
+  let s = ((ch && ch.name) || '').toLowerCase();
+  s = s.replace(/^\s*[a-z0-9+]{1,5}\s*[:|]\s*/i, '');
+  if (/\b(hd|fhd|sd|hevc)\b/.test(s)) return false;
+  return /\b(4k|uhd|2160p?|4320p?)\b/.test(s) || /\b8k\b/.test(s);
+}
+
+// Décide AUTOMATIQUEMENT du transcodage : sonde la vraie résolution (≥ 2160p
+// = vrai UHD à transcoder). Résultat mémorisé par chaîne pour ne sonder qu'une
+// fois (les lectures suivantes sont instantanées).
+const resCache = (() => { try { return JSON.parse(localStorage.getItem('res_cache') || '{}'); } catch { return {}; } })();
+async function needsTranscode(channel) {
+  const id = channel.stream_id;
+  if (id in resCache) return resCache[id];
+  let decision = false;
+  try {
+    const r = await window.api.probeStream(streamUrl(id, 'ts'));
+    if (r && r.height) decision = r.height >= 1600;    // 2160p (et marge) = vrai UHD
+  } catch {}
+  resCache[id] = decision;
+  try { localStorage.setItem('res_cache', JSON.stringify(resCache)); } catch {}
+  return decision;
+}
+
+// Lecture directe via mpegts (flux .ts), fallback HLS. Comportement d'origine.
+function loadDirect(channel) {
   destroyPlayer();
   const v = $('video');
   const tsUrl = streamUrl(channel.stream_id, 'ts');
   const hlsUrl = streamUrl(channel.stream_id, 'm3u8');
-
   if (window.mpegts && mpegts.isSupported()) {
     const p = mpegts.createPlayer(
       { type: 'mpegts', isLive: true, url: tsUrl },
       { enableWorker: true, liveBufferLatencyChasing: false, liveSync: false, lazyLoad: false,
-        autoCleanupSourceBuffer: true, stashInitialSize: 1024 * 1024, enableStashBuffer: true }
+        autoCleanupSourceBuffer: true, stashInitialSize: 4 * 1024 * 1024, enableStashBuffer: true }
     );
     p.attachMediaElement(v);
     p.load();
@@ -961,6 +1009,24 @@ function play(channel) {
     state.player = p;
   } else {
     playHls(hlsUrl);
+  }
+}
+
+// Lecture d'une chaîne 4K via le relais transcodé en matériel (M1).
+async function loadTranscodedLive(channel) {
+  destroyPlayer();
+  $('overlay').classList.remove('hidden');
+  $('overlay').textContent = '⚙️ Préparation 4K (transcodage matériel)…';
+  try {
+    const r = await window.api.liveTranscodeTune(streamUrl(channel.stream_id, 'ts'), channel.name);
+    if (state.current !== channel) return;          // l'utilisateur a déjà zappé
+    if (!r || !r.local) throw new Error((r && r.error) || 'relais indisponible');
+    $('overlay').classList.add('hidden');
+    playHls(r.local);
+  } catch (e) {
+    if (state.current !== channel) return;
+    $('overlay').classList.add('hidden');
+    loadDirect(channel);                             // repli : lecture directe
   }
 }
 
@@ -1009,7 +1075,13 @@ function playHls(url, retries = 6) {
   destroyPlayer();
   const v = $('video');
   if (window.Hls && Hls.isSupported()) {
-    const hls = new Hls({ liveSyncDurationCount: 4, manifestLoadingMaxRetry: 8, manifestLoadingRetryDelay: 800 });
+    const hls = new Hls({
+      liveSyncDurationCount: 6,        // ~12 s derrière le bord live (était 4 ≈ 8 s)
+      liveMaxLatencyDurationCount: 12, // tolère plus de retard avant de sauter
+      maxBufferLength: 30,             // jusqu'à 30 s de tampon en avant
+      manifestLoadingMaxRetry: 8, manifestLoadingRetryDelay: 800,
+      fragLoadingMaxRetry: 8,
+    });
     hls.loadSource(url);
     hls.attachMedia(v);
     hls.on(Hls.Events.MANIFEST_PARSED, () => { suppressResume = false; v.play().catch(() => {}); });
