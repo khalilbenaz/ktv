@@ -160,6 +160,7 @@
             <div class="actions" id="liveActions">
               <button id="relayBtn" disabled>📡 Restreamer</button>
               <button id="recBtn" disabled>⏺ Enregistrer</button>
+              <button id="scheduleBtn" disabled><span class="sch-ico">📅</span> <span>Programmer</span><span id="schCount" class="sch-badge hidden">0</span></button>
             </div>
           </div>
         </section>
@@ -199,6 +200,57 @@
             <button id="tunnelCopy" class="copy">Copier le lien public</button>
           </div>
           <div id="tunnelStatus" class="hint" style="margin-top:8px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL PROGRAMMER UN ENREGISTREMENT -->
+  <div id="scheduleModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>📅 Programmer un enregistrement</h2>
+        <button id="scheduleClose" class="modal-x">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="row"><span class="k">Chaîne</span><span class="v" id="schChan">—</span></div>
+
+        <div class="sch-field">
+          <label class="sch-label">Début</label>
+          <div class="sch-opts">
+            <label class="rec-opt"><input type="radio" name="schStart" value="now" checked /> Maintenant</label>
+            <label class="rec-opt"><input type="radio" name="schStart" value="at" /> À une heure précise</label>
+          </div>
+          <input id="schStartAt" type="datetime-local" disabled />
+        </div>
+
+        <div class="sch-field">
+          <label class="sch-label">Fin de l'enregistrement</label>
+          <div class="sch-opts">
+            <label class="rec-opt"><input type="radio" name="schEnd" value="dur" checked /> Après une durée</label>
+            <label class="rec-opt"><input type="radio" name="schEnd" value="at" /> À une heure précise</label>
+            <label class="rec-opt"><input type="radio" name="schEnd" value="none" /> Illimité (arrêt manuel)</label>
+          </div>
+          <div id="schDurWrap" class="sch-dur">
+            <input id="schDur" type="number" min="1" step="1" value="60" /> <span>minutes</span>
+            <div class="sch-presets">
+              <button type="button" data-min="15">15 min</button>
+              <button type="button" data-min="30">30 min</button>
+              <button type="button" data-min="60">1 h</button>
+              <button type="button" data-min="120">2 h</button>
+              <button type="button" data-min="150" class="sch-preset-foot">⚽ Match foot (2 h 30)</button>
+            </div>
+          </div>
+          <input id="schEndAt" type="datetime-local" class="hidden" />
+        </div>
+
+        <div id="schSummary" class="hint"></div>
+        <div id="schError" class="hint" style="color:#ff6b6b;"></div>
+        <button id="schConfirm" class="copy">Programmer</button>
+
+        <div class="sch-list-box">
+          <p class="hint" style="margin:14px 0 6px;"><b>Enregistrements programmés</b></p>
+          <ul id="schList" class="sch-list"></ul>
         </div>
       </div>
     </div>

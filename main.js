@@ -40,6 +40,7 @@ if (ffmpegPath && ffmpegPath.includes('app.asar')) {
 }
 
 const recordings = new Map(); // id -> { proc, file }
+const schedules = new Map();  // id -> { timer, url, name, startAt, durationSec }
 let win;
 
 // Filet de sécurité : ne jamais laisser une erreur tuer le process principal
@@ -325,6 +326,8 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   // stop everything
   for (const { proc } of recordings.values()) try { proc.kill('SIGKILL'); } catch {}
+  for (const { timer } of schedules.values()) try { clearTimeout(timer); } catch {}
+  schedules.clear();
   stopRelay();
   stopTunnel();
   if (process.platform !== 'darwin') app.quit();
@@ -608,8 +611,9 @@ function httpDownload(id, url, entry, redirects) {
   });
 }
 
-// Start recording a stream URL with ffmpeg (stream copy -> mp4)
-ipcMain.handle('record-start', async (e, { url, name }) => {
+// Start recording a stream URL with ffmpeg (stream copy -> mp4).
+// durationSec > 0 => ffmpeg s'arrête tout seul après cette durée (auto-stop).
+async function startRecordingInternal({ url, name, durationSec }) {
   const id = String(Date.now()) + Math.floor(Math.random() * 1000);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const file = path.join(recordingsDir(), `${sanitize(name)}_${stamp}.mp4`);
@@ -625,6 +629,7 @@ ipcMain.handle('record-start', async (e, { url, name }) => {
     startedRelay = true;
   }
 
+  const dur = Math.max(0, Math.floor(Number(durationSec) || 0));
   const args = [
     '-hide_banner',
     '-loglevel', 'error',
@@ -635,11 +640,13 @@ ipcMain.handle('record-start', async (e, { url, name }) => {
     // récupérable même si l'enregistrement est coupé brutalement.
     '-movflags', '+frag_keyframe+empty_moov+default_base_moof',
     '-f', 'mp4',
-    '-y', part
   ];
+  // Auto-stop : -t arrête proprement ffmpeg après `dur` secondes.
+  if (dur > 0) args.push('-t', String(dur));
+  args.push('-y', part);
 
   const proc = spawn(ffmpegPath, args);
-  recordings.set(id, { proc, file, part, name, startedRelay });
+  recordings.set(id, { proc, file, part, name, startedRelay, durationSec: dur });
 
   let errBuf = '';
   proc.on('error', (e) => { notifyError('ffmpeg (enregistrement) : ' + e.message); });
@@ -656,7 +663,53 @@ ipcMain.handle('record-start', async (e, { url, name }) => {
     });
   });
 
-  return { id, file, local: LOCAL_URL, startedRelay };
+  return { id, file, local: LOCAL_URL, startedRelay, durationSec: dur };
+}
+
+ipcMain.handle('record-start', async (e, { url, name, durationSec }) => {
+  return startRecordingInternal({ url, name, durationSec });
+});
+
+/* ---------- Enregistrements programmés (planification + auto-stop) ---------- */
+function scheduleSnapshot() {
+  return [...schedules.entries()].map(([id, s]) => ({
+    id, name: s.name, startAt: s.startAt, durationSec: s.durationSec,
+  }));
+}
+
+// Programme un enregistrement : démarre à `startAt` (epoch ms) pour `durationSec`.
+ipcMain.handle('schedule-add', (e, { url, name, startAt, durationSec }) => {
+  const id = 'sch' + String(Date.now()) + Math.floor(Math.random() * 1000);
+  const when = Math.max(0, Number(startAt) - Date.now());
+  const dur = Math.max(0, Math.floor(Number(durationSec) || 0));
+
+  const timer = setTimeout(async () => {
+    schedules.delete(id);
+    try {
+      const rec = await startRecordingInternal({ url, name, durationSec: dur });
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('schedule-fired', {
+          scheduleId: id, id: rec.id, name, file: rec.file,
+          local: rec.local, startedRelay: rec.startedRelay, durationSec: dur,
+        });
+      }
+    } catch (err) {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('schedule-error', { scheduleId: id, name, error: err.message });
+      }
+    }
+  }, when);
+
+  schedules.set(id, { timer, url, name, startAt: Number(startAt), durationSec: dur });
+  return { id, startAt: Number(startAt), durationSec: dur, list: scheduleSnapshot() };
+});
+
+ipcMain.handle('schedule-list', () => scheduleSnapshot());
+
+ipcMain.handle('schedule-cancel', (e, { id }) => {
+  const s = schedules.get(id);
+  if (s) { try { clearTimeout(s.timer); } catch {} schedules.delete(id); }
+  return { ok: !!s, list: scheduleSnapshot() };
 });
 
 // Remux du fichier fragmenté (.part) en MP4 standard avec un moov complet :

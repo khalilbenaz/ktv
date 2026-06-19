@@ -41,6 +41,7 @@ const state = {
   recId: null,
   recStart: 0,
   recTimer: null,
+  recDuration: 0,
   recStartedRelay: false,
   relaying: false,
   relayLan: '',
@@ -837,7 +838,7 @@ function playMedia(url, title, isLive, crumb) {
   $('nowTitle').textContent = title || '—';
   $('nowEpg').textContent = '';
   $('overlay').classList.add('hidden');
-  $('recBtn').disabled = true; $('relayBtn').disabled = true;
+  $('recBtn').disabled = true; $('relayBtn').disabled = true; $('scheduleBtn').disabled = true;
   if (state.relaying) stopRelay();
   destroyPlayer();
   const v = $('video');
@@ -911,6 +912,7 @@ function play(channel) {
   loadEpg(channel);
   $('recBtn').disabled = false;
   $('relayBtn').disabled = false;
+  $('scheduleBtn').disabled = false;
   if (state.relaying) stopRelay();
   document.querySelectorAll('.chan-card').forEach((c) => c.classList.toggle('active', c.dataset.id == channel.stream_id));
   buildPlayerSidebar(channel);
@@ -1050,15 +1052,7 @@ async function toggleRecord() {
     try {
       const url = streamUrl(state.current.stream_id, 'ts');
       const res = await window.api.recordStart(url, state.current.name);
-      state.recId = res.id;
-      state.recStartedRelay = res.startedRelay;
-      state.recStart = Date.now();
-      if (res.local && !state.relaying) { destroyPlayer(); playHls(res.local); }
-      btn.classList.add('recording');
-      btn.textContent = '⏹ Arrêter';
-      $('recDot').classList.remove('hidden');
-      state.recTimer = setInterval(updateRecTime, 1000);
-      updateRecTime();
+      beginRecUI(res, true);
     } catch (e) {
       alert('Enregistrement impossible : ' + e.message);
       btn.textContent = '⏺ Enregistrer';
@@ -1068,22 +1062,182 @@ async function toggleRecord() {
   }
 }
 
+// Met l'UI en mode "enregistrement en cours". switchPlayer=true bascule le
+// lecteur sur le flux local (cas d'un enregistrement lancé manuellement) ;
+// false pour un enregistrement programmé qui ne doit pas voler l'écran.
+function beginRecUI(res, switchPlayer) {
+  state.recId = res.id;
+  state.recStartedRelay = res.startedRelay;
+  state.recStart = Date.now();
+  state.recDuration = Math.floor(Number(res.durationSec) || 0);
+  if (switchPlayer && res.local && !state.relaying) { destroyPlayer(); playHls(res.local); }
+  const btn = $('recBtn');
+  btn.classList.add('recording');
+  btn.textContent = '⏹ Arrêter';
+  $('recDot').classList.remove('hidden');
+  clearInterval(state.recTimer);
+  state.recTimer = setInterval(updateRecTime, 1000);
+  updateRecTime();
+}
+
 function resumeDirect() { if (state.current) play(state.current); }
+
+function fmtClock(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+  const ss = String(sec % 60).padStart(2, '0');
+  return `${mm}:${ss}`;
+}
+
+// Durée lisible : "1 h 30", "45 min", "2 h".
+function fmtDur(sec) {
+  const m = Math.round(sec / 60);
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  if (h && rm) return `${h} h ${rm}`;
+  if (h) return `${h} h`;
+  return `${m} min`;
+}
 
 function updateRecTime() {
   const s = Math.floor((Date.now() - state.recStart) / 1000);
-  const mm = String(Math.floor(s / 60)).padStart(2, '0');
-  const ss = String(s % 60).padStart(2, '0');
-  $('recTime').textContent = `${mm}:${ss}`;
+  if (state.recDuration > 0) {
+    // Compte à rebours : temps écoulé / durée totale programmée.
+    $('recTime').textContent = `${fmtClock(s)} / ${fmtClock(state.recDuration)}`;
+  } else {
+    $('recTime').textContent = fmtClock(s);
+  }
 }
 
 function stopRecUI() {
   state.recId = null;
+  state.recDuration = 0;
   clearInterval(state.recTimer);
   const btn = $('recBtn');
   btn.classList.remove('recording');
   btn.textContent = '⏺ Enregistrer';
   $('recDot').classList.add('hidden');
+}
+
+/* ---------- Programmation d'enregistrement ---------- */
+// Met à jour la pastille de comptage + l'état "armé" du bouton Programmer.
+function updateScheduleBadge(n) {
+  const badge = $('schCount'); const btn = $('scheduleBtn');
+  if (!badge || !btn) return;
+  if (n > 0) { badge.textContent = n; badge.classList.remove('hidden'); btn.classList.add('armed'); }
+  else { badge.classList.add('hidden'); btn.classList.remove('armed'); }
+}
+
+function schStartMode() { return document.querySelector('input[name="schStart"]:checked').value; }
+function schEndMode() { return document.querySelector('input[name="schEnd"]:checked').value; }
+
+// Pré-remplit un datetime-local au format local (sans décalage UTC).
+function toLocalInput(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function openScheduleModal() {
+  if (!state.current) return;
+  $('schChan').textContent = state.current.name || ('Chaîne ' + state.current.stream_id);
+  // valeurs par défaut : début maintenant, durée 60 min
+  document.querySelector('input[name="schStart"][value="now"]').checked = true;
+  document.querySelector('input[name="schEnd"][value="dur"]').checked = true;
+  $('schDur').value = 60;
+  const now = new Date();
+  $('schStartAt').value = toLocalInput(new Date(now.getTime() + 5 * 60000));
+  $('schEndAt').value = toLocalInput(new Date(now.getTime() + 65 * 60000));
+  $('schError').textContent = '';
+  syncScheduleFields();
+  $('scheduleModal').classList.remove('hidden');
+  refreshScheduleList();
+}
+
+function syncScheduleFields() {
+  $('schStartAt').disabled = (schStartMode() !== 'at');
+  const em = schEndMode();
+  $('schDurWrap').classList.toggle('hidden', em !== 'dur');
+  $('schEndAt').classList.toggle('hidden', em !== 'at');
+  updateScheduleSummary();
+}
+
+// Calcule { startAt, durationSec } d'après les choix UI. Lance une erreur si invalide.
+function computeSchedule() {
+  const startAt = schStartMode() === 'now' ? Date.now() : new Date($('schStartAt').value).getTime();
+  if (!startAt || isNaN(startAt)) throw new Error('Heure de début invalide.');
+  if (startAt < Date.now() - 60000) throw new Error('L\'heure de début est déjà passée.');
+
+  const em = schEndMode();
+  let durationSec = 0;
+  if (em === 'dur') {
+    const min = Number($('schDur').value);
+    if (!min || min <= 0) throw new Error('Durée invalide.');
+    durationSec = Math.round(min * 60);
+  } else if (em === 'at') {
+    const endAt = new Date($('schEndAt').value).getTime();
+    if (!endAt || isNaN(endAt)) throw new Error('Heure de fin invalide.');
+    durationSec = Math.round((endAt - startAt) / 1000);
+    if (durationSec <= 0) throw new Error('La fin doit être après le début.');
+  } // em === 'none' => durationSec 0 (illimité)
+  return { startAt, durationSec };
+}
+
+function updateScheduleSummary() {
+  try {
+    const { startAt, durationSec } = computeSchedule();
+    const when = schStartMode() === 'now'
+      ? 'maintenant'
+      : new Date(startAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+    const how = durationSec > 0 ? `pendant ${fmtDur(durationSec)}` : 'jusqu\'à arrêt manuel';
+    $('schSummary').textContent = `▶︎ Démarre ${when}, ${how}.`;
+    $('schError').textContent = '';
+  } catch (e) {
+    $('schSummary').textContent = '';
+  }
+}
+
+async function confirmSchedule() {
+  $('schError').textContent = '';
+  let plan;
+  try { plan = computeSchedule(); }
+  catch (e) { $('schError').textContent = e.message; return; }
+
+  const url = streamUrl(state.current.stream_id, 'ts');
+  const name = state.current.name || ('Chaîne ' + state.current.stream_id);
+  const btn = $('schConfirm');
+  btn.disabled = true; const old = btn.textContent; btn.textContent = '…';
+  try {
+    await window.api.scheduleAdd(url, name, plan.startAt, plan.durationSec);
+    await refreshScheduleList();
+    btn.textContent = '✓ Programmé';
+    setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 1500);
+  } catch (e) {
+    $('schError').textContent = 'Échec : ' + e.message;
+    btn.textContent = old; btn.disabled = false;
+  }
+}
+
+async function refreshScheduleList() {
+  let list = [];
+  try { list = await window.api.scheduleList(); } catch {}
+  updateScheduleBadge(list.length);
+  const ul = $('schList');
+  if (!list.length) { ul.innerHTML = '<li class="sch-empty">Aucun enregistrement programmé.</li>'; return; }
+  list.sort((a, b) => a.startAt - b.startAt);
+  ul.innerHTML = '';
+  for (const s of list) {
+    const li = document.createElement('li');
+    const when = new Date(s.startAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+    const dur = s.durationSec > 0 ? fmtDur(s.durationSec) : '∞';
+    const info = document.createElement('span');
+    info.className = 'sch-info';
+    info.textContent = `🕒 ${when} · ${dur} · ${s.name}`;
+    const cancel = document.createElement('button');
+    cancel.className = 'sch-cancel'; cancel.textContent = '✕'; cancel.title = 'Annuler';
+    cancel.onclick = async () => { await window.api.scheduleCancel(s.id); refreshScheduleList(); };
+    li.appendChild(info); li.appendChild(cancel);
+    ul.appendChild(li);
+  }
 }
 
 /* ---------- Restream ---------- */
@@ -1534,6 +1688,23 @@ window.addEventListener('DOMContentLoaded', () => {
   $('csCollapse').onclick = togglePlayerSidebar;
   $('recBtn').onclick = toggleRecord;
   $('relayBtn').onclick = toggleRelay;
+  $('scheduleBtn').onclick = openScheduleModal;
+
+  // Programmation
+  $('scheduleClose').onclick = () => $('scheduleModal').classList.add('hidden');
+  $('scheduleModal').onclick = (e) => { if (e.target.id === 'scheduleModal') $('scheduleModal').classList.add('hidden'); };
+  document.querySelectorAll('input[name="schStart"], input[name="schEnd"]').forEach((r) => r.addEventListener('change', syncScheduleFields));
+  $('schStartAt').addEventListener('change', updateScheduleSummary);
+  $('schEndAt').addEventListener('change', updateScheduleSummary);
+  $('schDur').addEventListener('input', updateScheduleSummary);
+  document.querySelectorAll('.sch-presets button').forEach((b) => {
+    b.onclick = () => {
+      document.querySelector('input[name="schEnd"][value="dur"]').checked = true;
+      $('schDur').value = b.dataset.min;
+      syncScheduleFields();
+    };
+  });
+  $('schConfirm').onclick = confirmSchedule;
 
   // Séries
   $('seriesClose').onclick = () => $('seriesModal').classList.add('hidden');
@@ -1583,6 +1754,20 @@ window.addEventListener('DOMContentLoaded', () => {
   window.api.onTunnelStatus((d) => { $('tunnelStatus').textContent = d.msg || ''; });
   window.api.onTunnelStopped(() => { resetTunnelUI(); state.tunnelUrl = ''; });
 
+  // Un enregistrement programmé vient de démarrer.
+  window.api.onScheduleFired((data) => {
+    refreshScheduleList();
+    // Si l'utilisateur regarde la chaîne concernée, on bascule sur le flux local.
+    const watching = state.current && (state.current.name === data.name);
+    beginRecUI({ id: data.id, startedRelay: data.startedRelay, local: data.local, durationSec: data.durationSec }, watching);
+    try { new Notification('⏺ Enregistrement programmé démarré', { body: data.name }); } catch {}
+  });
+  window.api.onScheduleError((data) => {
+    refreshScheduleList();
+    console.error('schedule:', data.error);
+    try { new Notification('⚠ Enregistrement programmé échoué', { body: (data.name || '') + ' — ' + data.error }); } catch {}
+  });
+
   window.api.onRecordStopped((data) => {
     stopRecUI();
     if (data.startedRelay && !state.relaying) {
@@ -1596,6 +1781,9 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     }
   });
+
+  // État initial de la pastille des enregistrements programmés
+  refreshScheduleList();
 
   // Reconnexion automatique au lancement si des identifiants sont mémorisés
   if (autoConnect) connect();

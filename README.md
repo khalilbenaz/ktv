@@ -24,6 +24,8 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** — interface moderne pa
 
 ### Enregistrement, partage, téléchargement
 - **Enregistrement** `.mp4` (sans ré-encodage), dossier **configurable**, liste groupée **par date**, export **WhatsApp** optionnel (son + 30 fps).
+- **Enregistrement programmé & arrêt automatique** (bouton **📅 Programmer**) : choisis le **début** (immédiat ou à une heure précise) et la **fin** (après une **durée**, à une **heure précise**, ou illimité = arrêt manuel). Raccourcis 15 min / 30 min / 1 h / 2 h et **⚽ Match foot (2 h 30)**. Les programmations en attente sont listées et annulables ; une **pastille** sur le bouton indique leur nombre. Le minuteur REC affiche *écoulé / durée totale*.
+  > 📦 Taille : enregistrement en copie de flux → ≈ `débit(Mbps) × durée(min) / 133` Go. Ex. un match beIN HD (~6 Mbps) de 2 h 30 ≈ **6–7 Go**.
 - **Restream** : une seule connexion fournisseur partagée vers plusieurs appareils du réseau local.
 - **Lien public** (Cloudflare, gratuit) pour diffuser hors du LAN.
 - **Téléchargements** : films et séries (épisode, **saison entière** ou **série complète**), **mis en file et traités un par un** (respect de la limite d'une seule connexion fournisseur), avec tiroir de progression.
