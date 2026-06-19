@@ -134,10 +134,20 @@
           <div class="player-top">
             <button id="playerBack" class="icon-btn">‹ Retour</button>
             <span id="playerCrumb" class="crumb">—</span>
+            <button id="sidebarToggle" class="icon-btn hidden" title="Afficher/masquer les chaînes">☰ Chaînes</button>
           </div>
-          <div class="player-wrap">
-            <video id="video" controls autoplay playsinline></video>
-            <div id="overlay" class="overlay">Sélectionnez un contenu</div>
+          <div class="player-body">
+            <div class="player-wrap">
+              <video id="video" controls autoplay playsinline></video>
+              <div id="overlay" class="overlay">Sélectionnez un contenu</div>
+            </div>
+            <aside id="chanSidebar" class="chan-sidebar hidden">
+              <div class="cs-head">
+                <span id="csTitle">Chaînes</span>
+                <button id="csCollapse" class="icon-btn" title="Réduire">›</button>
+              </div>
+              <div id="csList" class="cs-list"></div>
+            </aside>
           </div>
           <div class="bar">
             <div class="now">

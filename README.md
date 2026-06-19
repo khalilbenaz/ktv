@@ -17,6 +17,7 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** — interface moderne pa
 ### Lecture
 - Connexion Xtream (URL / utilisateur / mot de passe mémorisés, **reconnexion automatique** au lancement, bouton afficher/masquer le mot de passe).
 - **Live TV** en grille de cartes (logo + qualité 8K/4K/FHD/HD/SD + EPG *now/next*), lecture 1 clic (`mpegts.js` natif Xtream, fallback `hls.js`).
+- **Sidebar chaînes dans le lecteur** : à droite du player, liste repliable des chaînes de la **même catégorie** (logo + programme en cours) pour **zapper sans revenir à la liste complète**.
 - **Films (VOD)** et **Séries** (saisons/épisodes) — catégories françaises.
 - **Enchaînement automatique** de l'épisode suivant.
 - **Guide TV** : grille EPG (programmes en cours + à venir) par catégorie, noms de chaînes longs affichés sur **2 lignes**.

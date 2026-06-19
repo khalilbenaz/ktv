@@ -832,6 +832,8 @@ function playMedia(url, title, isLive, crumb) {
   state.current = null;
   state.playQueue = null;
   enterPlayer(crumb || title, false);
+  $('chanSidebar').classList.add('hidden');
+  $('sidebarToggle').classList.add('hidden');
   $('nowTitle').textContent = title || '—';
   $('nowEpg').textContent = '';
   $('overlay').classList.add('hidden');
@@ -911,6 +913,7 @@ function play(channel) {
   $('relayBtn').disabled = false;
   if (state.relaying) stopRelay();
   document.querySelectorAll('.chan-card').forEach((c) => c.classList.toggle('active', c.dataset.id == channel.stream_id));
+  buildPlayerSidebar(channel);
 
   destroyPlayer();
   const v = $('video');
@@ -956,6 +959,65 @@ function playHls(url, retries = 6) {
     suppressResume = false;
     v.play().catch(() => {});
   }
+}
+
+/* ---------- Sidebar chaînes (player) ---------- */
+let csEpgObserver = null;
+function buildPlayerSidebar(active) {
+  const aside = $('chanSidebar'), list = $('csList'), toggle = $('sidebarToggle');
+  const chans = (state.channels || []).filter((c) => !isJunkChannel(c));
+  // seulement si la chaîne jouée appartient à la catégorie courante (même liste)
+  const inList = chans.some((c) => c.stream_id == active.stream_id);
+  if (!active || chans.length < 2 || !inList) { aside.classList.add('hidden'); toggle.classList.add('hidden'); return; }
+  toggle.classList.remove('hidden');
+  aside.classList.remove('hidden');
+  aside.classList.toggle('collapsed', localStorage.getItem('player_sidebar') === '0');
+  // Même catégorie déjà construite : on met juste à jour la chaîne active (garde le scroll)
+  if (state.sidebarCat === state.curLiveCat && list.childElementCount) {
+    list.querySelectorAll('.cs-item').forEach((el) => {
+      const on = el.dataset.id == active.stream_id;
+      el.classList.toggle('active', on);
+      if (on) el.scrollIntoView({ block: 'nearest' });
+    });
+    return;
+  }
+  state.sidebarCat = state.curLiveCat;
+  $('csTitle').textContent = `Chaînes (${chans.length})`;
+  list.innerHTML = '';
+  if (!csEpgObserver) {
+    csEpgObserver = new IntersectionObserver((ents) => {
+      ents.forEach((e) => { if (e.isIntersecting) { csEpgObserver.unobserve(e.target); fillSidebarEpg(e.target); } });
+    }, { root: list, rootMargin: '200px' });
+  }
+  for (const c of chans) {
+    const el = document.createElement('div');
+    el.className = 'cs-item' + (c.stream_id == active.stream_id ? ' active' : '');
+    el.dataset.id = c.stream_id;
+    const logo = c.stream_icon
+      ? `<img src="${escapeHtml(c.stream_icon)}" loading="lazy" onerror="this.remove()">`
+      : escapeHtml((c.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase());
+    el.innerHTML = `<div class="cs-logo">${logo}</div><div class="cs-info">` +
+      `<span class="cs-name">${escapeHtml(c.name || ('Chaîne ' + c.stream_id))}</span>` +
+      `<span class="cs-prog muted">…</span></div>`;
+    el.onclick = () => play(c);
+    list.appendChild(el);
+    csEpgObserver.observe(el);
+  }
+  const act = list.querySelector('.cs-item.active');
+  if (act) act.scrollIntoView({ block: 'center' });
+}
+async function fillSidebarEpg(el) {
+  const ch = (state.channels || []).find((c) => c.stream_id == el.dataset.id);
+  const prog = el.querySelector('.cs-prog');
+  if (!ch || !prog) return;
+  const e = await getChannelEpg(ch);
+  if (e && e.cur) { prog.textContent = e.cur.title; prog.classList.remove('muted'); }
+  else if (e && e.next) { prog.textContent = '⏭ ' + e.next.title; }
+  else { prog.textContent = ''; }
+}
+function togglePlayerSidebar() {
+  const collapsed = $('chanSidebar').classList.toggle('collapsed');
+  localStorage.setItem('player_sidebar', collapsed ? '0' : '1');
 }
 
 /* ---------- Enregistrement ---------- */
@@ -1451,6 +1513,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Lecteur
   $('playerBack').onclick = () => showView(state.browse);
+  $('sidebarToggle').onclick = togglePlayerSidebar;
+  $('csCollapse').onclick = togglePlayerSidebar;
   $('recBtn').onclick = toggleRecord;
   $('relayBtn').onclick = toggleRelay;
 
