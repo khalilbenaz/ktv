@@ -48,6 +48,14 @@
           <span class="search-ic">🔍</span>
           <input id="search" type="text" placeholder="Rechercher…" autocomplete="off" />
         </div>
+        <div id="recChip" class="rec-chip hidden">
+          <span id="rcWatch" class="rc-main" title="Regarder la chaîne en cours d'enregistrement">
+            <span class="rc-dot">●</span><span class="rc-rec">REC</span>
+            <span id="rcTime">00:00</span><span id="rcSize" class="rc-size"></span>
+          </span>
+          <button id="rcToggle" class="rc-mini" title="Détails">▾</button>
+          <button id="rcStop" class="rc-mini" title="Arrêter l'enregistrement">⏹</button>
+        </div>
         <span class="chip" id="acctChip"><span class="dot"></span> <span id="acctTxt">—</span></span>
       </div>
 
@@ -192,12 +200,13 @@
     <div id="dlList"></div>
   </div>
 
-  <!-- BADGE ENREGISTREMENT GLOBAL (visible sur tous les écrans) -->
-  <div id="recBadge" class="rec-badge hidden" title="Voir mes enregistrements">
+  <!-- BADGE ENREGISTREMENT GLOBAL (détails, minimisable) -->
+  <div id="recBadge" class="rec-badge hidden">
     <div class="rb-top">
       <span class="rb-dot">●</span>
       <span class="rb-rec">REC</span>
       <span id="rbChan" class="rb-chan">—</span>
+      <button id="rbMin" class="rb-stop" title="Réduire">–</button>
       <button id="rbStop" class="rb-stop" title="Arrêter l'enregistrement">⏹</button>
     </div>
     <div class="rb-meta">
@@ -207,6 +216,7 @@
       <span id="rbSize"></span>
     </div>
     <div class="rb-bar"><div id="rbProgress" class="rb-progress"></div></div>
+    <div id="rbWatch" class="rb-watch">▶ Regarder pendant l'enregistrement</div>
   </div>
 
   <!-- MODAL RESTREAM -->

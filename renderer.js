@@ -44,6 +44,8 @@ const state = {
   recDuration: 0,
   recLocal: '',          // URL HLS locale du relais pendant un enregistrement
   recChannelName: '',    // nom de la chaîne en cours d'enregistrement
+  recBadgeMin: localStorage.getItem('rec_badge_min') !== '0', // badge détaillé réduit ? (réduit par défaut)
+  liveReload: null,      // fonction de relance du flux live courant (watchdog)
   recStartedRelay: false,
   relaying: false,
   relayLan: '',
@@ -190,6 +192,8 @@ function showView(name) {
   // Quitter le lecteur coupe la lecture (sinon le son continue en arrière-plan)
   if (leaving === 'player' && name !== 'player') {
     destroyPlayer();
+    stopLiveWatchdog();
+    state.liveReload = null;
     state.current = null;
     state.playQueue = null;
     $('overlay').classList.remove('hidden');
@@ -834,6 +838,8 @@ function destroyPlayer() {
 function playMedia(url, title, isLive, crumb) {
   state.current = null;
   state.playQueue = null;
+  state.liveReload = null;       // VOD : pas de watchdog live
+  stopLiveWatchdog();
   enterPlayer(crumb || title, false);
   $('chanSidebar').classList.add('hidden');
   $('sidebarToggle').classList.add('hidden');
@@ -941,6 +947,16 @@ function play(channel) {
   document.querySelectorAll('.chan-card').forEach((c) => c.classList.toggle('active', c.dataset.id == channel.stream_id));
   buildPlayerSidebar(channel);
 
+  // Permet au watchdog/reconnexion de relancer CETTE chaîne en cas de gel.
+  state.liveReload = () => loadLiveStream(channel);
+  loadLiveStream(channel);
+}
+
+// (Re)charge le flux LIVE direct d'une chaîne. Gère la reconnexion auto :
+// beaucoup de fournisseurs ferment la connexion .ts après quelques dizaines de
+// secondes → mpegts vide sa mémoire tampon puis s'arrête (LOADING_COMPLETE)
+// sans se reconnecter. On relance alors automatiquement.
+function loadLiveStream(channel) {
   destroyPlayer();
   const v = $('video');
   const tsUrl = streamUrl(channel.stream_id, 'ts');
@@ -949,17 +965,61 @@ function play(channel) {
   if (window.mpegts && mpegts.isSupported()) {
     const p = mpegts.createPlayer(
       { type: 'mpegts', isLive: true, url: tsUrl },
-      { enableWorker: true, liveBufferLatencyChasing: false, liveSync: false, lazyLoad: false,
-        autoCleanupSourceBuffer: true, stashInitialSize: 1024 * 1024, enableStashBuffer: true }
+      { enableWorker: true, liveBufferLatencyChasing: true, lazyLoad: false,
+        autoCleanupSourceBuffer: true, enableStashBuffer: false }
     );
     p.attachMediaElement(v);
     p.load();
     suppressResume = false;
     p.play().catch(() => {});
+    // Erreur fatale → bascule HLS (plus robuste pour le live continu).
     p.on(mpegts.Events.ERROR, () => playHls(hlsUrl));
+    // Connexion fermée par le serveur (tampon qui se vide puis stop) → reconnexion.
+    p.on(mpegts.Events.LOADING_COMPLETE, () => reloadLiveNow());
     state.player = p;
   } else {
     playHls(hlsUrl);
+  }
+  startLiveWatchdog();
+}
+
+/* ---------- Watchdog anti-gel du live ---------- */
+const liveWatch = { timer: null, lastT: -1, lastAdvance: 0, retries: 0 };
+let lastReloadAt = 0;
+
+// Relance le flux live, en évitant les reconnexions trop rapprochées.
+function reloadLiveNow() {
+  if (!state.liveReload) return;
+  const now = Date.now();
+  if (now - lastReloadAt < 3000) return;
+  lastReloadAt = now;
+  state.liveReload();
+}
+
+function startLiveWatchdog() {
+  stopLiveWatchdog();
+  liveWatch.lastT = -1; liveWatch.lastAdvance = Date.now(); liveWatch.retries = 0;
+  liveWatch.timer = setInterval(checkLiveStall, 3000);
+}
+function stopLiveWatchdog() {
+  if (liveWatch.timer) { clearInterval(liveWatch.timer); liveWatch.timer = null; }
+}
+function checkLiveStall() {
+  if (!state.liveReload) { stopLiveWatchdog(); return; }   // plus en live
+  const v = $('video');
+  if (v.paused || v.ended || suppressResume) { liveWatch.lastAdvance = Date.now(); return; }
+  const t = v.currentTime;
+  if (t > liveWatch.lastT + 0.05) {                         // ça avance : OK
+    liveWatch.lastT = t; liveWatch.lastAdvance = Date.now(); liveWatch.retries = 0;
+    return;
+  }
+  // Lecture figée : on tente une relance (max 6 fois d'affilée).
+  if (Date.now() - liveWatch.lastAdvance > 9000) {
+    liveWatch.retries++;
+    if (liveWatch.retries > 6) { stopLiveWatchdog(); return; }
+    liveWatch.lastAdvance = Date.now();
+    liveWatch.lastT = -1;
+    reloadLiveNow();
   }
 }
 
@@ -979,8 +1039,33 @@ function watchRecordingLive(channel) {
   $('scheduleBtn').disabled = false;
   document.querySelectorAll('.chan-card').forEach((c) => c.classList.toggle('active', c.dataset.id == channel.stream_id));
   buildPlayerSidebar(channel);
+  state.liveReload = () => playHls(state.recLocal);
   destroyPlayer();
   playHls(state.recLocal);
+  startLiveWatchdog();
+}
+
+// Aller regarder la chaîne en cours d'enregistrement (via le relais local,
+// donc sans 2e connexion). Appelé depuis la puce/badge REC.
+function watchCurrentRecording() {
+  if (!state.recId || !state.recLocal) return;
+  let ch = null;
+  if (state.current && state.current.name === state.recChannelName) ch = state.current;
+  else if (Array.isArray(state.channels)) ch = state.channels.find((c) => c.name === state.recChannelName);
+  if (ch) { watchRecordingLive(ch); return; }
+  // Fallback minimal : on lit le relais sans objet chaîne complet.
+  state.current = null;
+  enterPlayer(state.recChannelName || 'Enregistrement en cours', true);
+  $('nowTitle').textContent = state.recChannelName || '—';
+  $('nowEpg').textContent = '';
+  $('overlay').classList.add('hidden');
+  $('chanSidebar').classList.add('hidden');
+  $('sidebarToggle').classList.add('hidden');
+  $('recBtn').disabled = false; $('relayBtn').disabled = true; $('scheduleBtn').disabled = true;
+  state.liveReload = () => playHls(state.recLocal);
+  destroyPlayer();
+  playHls(state.recLocal);
+  startLiveWatchdog();
 }
 
 function playHls(url, retries = 6) {
@@ -1121,14 +1206,29 @@ function beginRecUI(res, switchPlayer) {
   btn.classList.add('recording');
   btn.textContent = '⏹ Arrêter';
   $('recDot').classList.remove('hidden');
-  // Badge global (visible sur tous les écrans, dont l'accueil)
+  // Indicateurs globaux : puce topbar (toujours) + badge détaillé (si non réduit)
   $('rbChan').textContent = state.recChannelName || '—';
   $('rbStart').textContent = '🕐 Début ' + new Date(state.recStart).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   $('rbSize').textContent = '';
-  $('recBadge').classList.remove('hidden');
+  $('rcSize').textContent = '';
+  $('recChip').classList.remove('hidden');
+  applyRecBadgeMin();
   clearInterval(state.recTimer);
   state.recTimer = setInterval(recTick, 1000);
   recTick();
+}
+
+// Affiche/masque le badge détaillé selon l'état "réduit".
+function applyRecBadgeMin() {
+  const min = state.recBadgeMin;
+  $('recBadge').classList.toggle('hidden', !state.recId || min);
+  $('rcToggle').textContent = min ? '▾' : '▴';
+}
+
+function toggleRecBadgeMin() {
+  state.recBadgeMin = !state.recBadgeMin;
+  localStorage.setItem('rec_badge_min', state.recBadgeMin ? '1' : '0');
+  applyRecBadgeMin();
 }
 
 // Une "tick" par seconde : met à jour minuteur + badge + taille fichier.
@@ -1164,6 +1264,8 @@ function updateRecTime() {
   } else {
     $('recTime').textContent = fmtClock(s);
   }
+  // Puce topbar : temps écoulé (compact)
+  $('rcTime').textContent = fmtClock(s);
   // Badge global : écoulé, restant, progression
   $('rbTime').textContent = '⏱ ' + fmtClock(s);
   const bar = $('rbProgress').parentElement;
@@ -1191,7 +1293,10 @@ async function fetchRecSize() {
   try {
     const list = await window.api.recordList();
     const r = list.find((x) => x.id === state.recId);
-    if (r) $('rbSize').textContent = '· 💾 ' + fmtSize(r.size);
+    if (r) {
+      $('rbSize').textContent = '· 💾 ' + fmtSize(r.size);
+      $('rcSize').textContent = '· ' + fmtSize(r.size);
+    }
   } catch {}
 }
 
@@ -1206,6 +1311,7 @@ function stopRecUI() {
   btn.textContent = '⏺ Enregistrer';
   $('recDot').classList.add('hidden');
   $('recBadge').classList.add('hidden');
+  $('recChip').classList.add('hidden');
 }
 
 /* ---------- Programmation d'enregistrement ---------- */
@@ -1805,12 +1911,17 @@ window.addEventListener('DOMContentLoaded', () => {
   $('relayBtn').onclick = toggleRelay;
   $('scheduleBtn').onclick = openScheduleModal;
 
-  // Badge d'enregistrement global
-  $('recBadge').onclick = () => showView('recordings');
-  $('rbStop').onclick = (e) => {
-    e.stopPropagation();
-    if (state.recId) { window.api.recordStop(state.recId); stopRecUI(); }
-  };
+  // Indicateurs d'enregistrement (puce topbar + badge détaillé)
+  const stopRec = () => { if (state.recId) { window.api.recordStop(state.recId); stopRecUI(); } };
+  // Puce topbar
+  $('rcWatch').onclick = watchCurrentRecording;
+  $('rcToggle').onclick = (e) => { e.stopPropagation(); toggleRecBadgeMin(); };
+  $('rcStop').onclick = (e) => { e.stopPropagation(); stopRec(); };
+  // Badge détaillé : clic = regarder, boutons = réduire / arrêter
+  $('recBadge').onclick = watchCurrentRecording;
+  $('rbWatch').onclick = (e) => { e.stopPropagation(); watchCurrentRecording(); };
+  $('rbMin').onclick = (e) => { e.stopPropagation(); toggleRecBadgeMin(); };
+  $('rbStop').onclick = (e) => { e.stopPropagation(); stopRec(); };
 
   // Programmation
   $('scheduleClose').onclick = () => $('scheduleModal').classList.add('hidden');
@@ -1879,8 +1990,13 @@ window.addEventListener('DOMContentLoaded', () => {
     refreshScheduleList();
     refreshActiveRecordings();
     // Si l'utilisateur regarde la chaîne concernée, on bascule sur le flux local.
-    const watching = state.current && (state.current.name === data.name);
-    beginRecUI({ id: data.id, name: data.name, startedRelay: data.startedRelay, local: data.local, durationSec: data.durationSec }, watching);
+    // Un live est-il déjà à l'écran ? (sinon on reste en arrière-plan)
+    const watchingLive = !!state.current;
+    beginRecUI({ id: data.id, name: data.name, startedRelay: data.startedRelay, local: data.local, durationSec: data.durationSec }, false);
+    // ⚠️ 1 connexion : si une chaîne est déjà en lecture, on ne peut pas garder
+    // ce flux EN PLUS de l'enregistrement → on bascule le lecteur sur la chaîne
+    // enregistrée (via le relais). Sans ça, la 2e connexion coupait la lecture.
+    if (watchingLive) watchCurrentRecording();
     try { new Notification('⏺ Enregistrement programmé démarré', { body: data.name }); } catch {}
   });
   window.api.onScheduleError((data) => {
