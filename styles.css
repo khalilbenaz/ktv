@@ -394,6 +394,25 @@ input[type="datetime-local"], #schDur {
 .sch-cancel { flex: 0 0 auto; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 4px 9px; cursor: pointer; }
 .sch-cancel:hover { color: var(--rec); border-color: var(--rec); }
 .sch-empty { color: var(--muted); padding: 14px 4px; text-align: center; }
+/* Badge d'enregistrement flottant (visible sur tous les écrans) */
+.rec-badge {
+  position: fixed; left: 18px; bottom: 18px; width: 280px; z-index: 70;
+  background: var(--panel); border: 1px solid var(--rec); border-radius: 12px;
+  padding: 10px 12px; box-shadow: 0 12px 40px rgba(0,0,0,.5); cursor: pointer;
+}
+.rec-badge.hidden { display: none; }
+.rb-top { display: flex; align-items: center; gap: 7px; }
+.rb-dot { color: var(--rec); font-size: 12px; animation: rbBlink 1.2s ease-in-out infinite; }
+@keyframes rbBlink { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+.rb-rec { color: var(--rec); font-weight: 800; font-size: 12px; letter-spacing: .5px; }
+.rb-chan { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 13px; }
+.rb-stop { flex: 0 0 auto; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 2px 8px; cursor: pointer; font-size: 13px; }
+.rb-stop:hover { color: var(--rec); border-color: var(--rec); }
+.rb-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 7px; color: var(--muted); font-size: 11px; }
+.rb-bar { margin-top: 8px; height: 5px; background: var(--panel2); border-radius: 3px; overflow: hidden; }
+.rb-progress { height: 100%; width: 0; background: linear-gradient(90deg, var(--rec), #ff8a3d); transition: width .5s linear; }
+.rb-bar.indeterminate .rb-progress { width: 35% !important; animation: rbSlide 1.6s ease-in-out infinite; }
+@keyframes rbSlide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
 .rec-section { margin: 6px 0 14px; }
 .rec-section-h { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin: 0 0 6px; }
 #recActiveBox .sch-info { color: var(--rec); font-weight: 600; }

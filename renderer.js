@@ -1121,9 +1121,20 @@ function beginRecUI(res, switchPlayer) {
   btn.classList.add('recording');
   btn.textContent = '⏹ Arrêter';
   $('recDot').classList.remove('hidden');
+  // Badge global (visible sur tous les écrans, dont l'accueil)
+  $('rbChan').textContent = state.recChannelName || '—';
+  $('rbStart').textContent = '🕐 Début ' + new Date(state.recStart).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  $('rbSize').textContent = '';
+  $('recBadge').classList.remove('hidden');
   clearInterval(state.recTimer);
-  state.recTimer = setInterval(updateRecTime, 1000);
+  state.recTimer = setInterval(recTick, 1000);
+  recTick();
+}
+
+// Une "tick" par seconde : met à jour minuteur + badge + taille fichier.
+function recTick() {
   updateRecTime();
+  fetchRecSize();
 }
 
 function resumeDirect() { if (state.current) play(state.current); }
@@ -1147,12 +1158,41 @@ function fmtDur(sec) {
 
 function updateRecTime() {
   const s = Math.floor((Date.now() - state.recStart) / 1000);
+  // Barre du lecteur
   if (state.recDuration > 0) {
-    // Compte à rebours : temps écoulé / durée totale programmée.
     $('recTime').textContent = `${fmtClock(s)} / ${fmtClock(state.recDuration)}`;
   } else {
     $('recTime').textContent = fmtClock(s);
   }
+  // Badge global : écoulé, restant, progression
+  $('rbTime').textContent = '⏱ ' + fmtClock(s);
+  const bar = $('rbProgress').parentElement;
+  if (state.recDuration > 0) {
+    const rem = Math.max(0, state.recDuration - s);
+    $('rbRemain').textContent = '· reste ' + fmtClock(rem);
+    bar.classList.remove('indeterminate');
+    $('rbProgress').style.width = Math.min(100, (s / state.recDuration) * 100) + '%';
+  } else {
+    $('rbRemain').textContent = '· illimité';
+    bar.classList.add('indeterminate');
+  }
+}
+
+// Taille lisible (Mo / Go).
+function fmtSize(bytes) {
+  const mb = (bytes || 0) / (1024 * 1024);
+  if (mb >= 1024) return (mb / 1024).toFixed(2) + ' Go';
+  return Math.max(0, Math.round(mb)) + ' Mo';
+}
+
+// Récupère la taille du fichier en cours depuis le process principal.
+async function fetchRecSize() {
+  if (!state.recId) return;
+  try {
+    const list = await window.api.recordList();
+    const r = list.find((x) => x.id === state.recId);
+    if (r) $('rbSize').textContent = '· 💾 ' + fmtSize(r.size);
+  } catch {}
 }
 
 function stopRecUI() {
@@ -1165,6 +1205,7 @@ function stopRecUI() {
   btn.classList.remove('recording');
   btn.textContent = '⏺ Enregistrer';
   $('recDot').classList.add('hidden');
+  $('recBadge').classList.add('hidden');
 }
 
 /* ---------- Programmation d'enregistrement ---------- */
@@ -1484,10 +1525,6 @@ async function renderHomeCatPicker() {
   if (!wrap.children.length) wrap.innerHTML = '<p class="hint">Aucune catégorie disponible.</p>';
 }
 
-/* ---------- Réglage export WhatsApp après enregistrement ---------- */
-function getAskWa() { return localStorage.getItem('rec_ask_whatsapp') !== '0'; }
-function setAskWa(on) { localStorage.setItem('rec_ask_whatsapp', on ? '1' : '0'); }
-
 async function exportWhatsapp(file, btn) {
   const old = btn ? btn.textContent : null;
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
@@ -1768,6 +1805,13 @@ window.addEventListener('DOMContentLoaded', () => {
   $('relayBtn').onclick = toggleRelay;
   $('scheduleBtn').onclick = openScheduleModal;
 
+  // Badge d'enregistrement global
+  $('recBadge').onclick = () => showView('recordings');
+  $('rbStop').onclick = (e) => {
+    e.stopPropagation();
+    if (state.recId) { window.api.recordStop(state.recId); stopRecUI(); }
+  };
+
   // Programmation
   $('scheduleClose').onclick = () => $('scheduleModal').classList.add('hidden');
   $('scheduleModal').onclick = (e) => { if (e.target.id === 'scheduleModal') $('scheduleModal').classList.add('hidden'); };
@@ -1813,8 +1857,6 @@ window.addEventListener('DOMContentLoaded', () => {
   // Enregistrements
   $('recOpenFolder').onclick = () => window.api.openRecordingsDir();
   $('recExportAll').onclick = exportAllWhatsapp;
-  $('recAskWa').checked = getAskWa();
-  $('recAskWa').onchange = (e) => setAskWa(e.target.checked);
   $('recFilter').onchange = (e) => { recView.channel = e.target.value; recView.page = 1; renderRecPage(); };
   $('recSearch').addEventListener('input', (e) => { recView.q = e.target.value; recView.page = 1; renderRecPage(); });
 
@@ -1854,12 +1896,8 @@ window.addEventListener('DOMContentLoaded', () => {
       window.api.relayStop();
       resumeDirect();
     }
-    if (data.file) {
-      state.lastRecFile = data.file;
-      if (getAskWa() && confirm('Enregistrement terminé.\n\nL\'exporter maintenant pour WhatsApp (son garanti + 30 fps) ?')) {
-        exportWhatsapp(data.file);
-      }
-    }
+    if (data.file) state.lastRecFile = data.file;
+    // L'export WhatsApp reste disponible à la demande dans "Mes enregistrements".
   });
 
   // État initial de la pastille des enregistrements programmés

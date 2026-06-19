@@ -753,7 +753,11 @@ ipcMain.handle('record-stop', (e, { id }) => {
 });
 
 ipcMain.handle('record-list', () => {
-  return [...recordings.entries()].map(([id, r]) => ({ id, file: r.file, name: r.name }));
+  return [...recordings.entries()].map(([id, r]) => {
+    let size = 0;
+    try { size = fs.statSync(r.part).size; } catch {}
+    return { id, file: r.file, name: r.name, size, durationSec: r.durationSec || 0 };
+  });
 });
 
 /* ---------- Restream : 1 connexion montante -> N clients LAN ---------- */

@@ -127,7 +127,6 @@
             </div>
             <ul id="recList" class="rec-list"></ul>
             <div id="recPager" class="rec-pager"></div>
-            <label class="rec-opt"><input type="checkbox" id="recAskWa" /> Proposer l'export WhatsApp à la fin d'un enregistrement</label>
             <div class="rec-foot">
               <button id="recExportAll" class="ghost">📱 Tout convertir (filtre actuel)</button>
               <button id="recOpenFolder" class="copy" style="margin-top:0;">📁 Ouvrir le dossier</button>
@@ -191,6 +190,23 @@
       </div>
     </div>
     <div id="dlList"></div>
+  </div>
+
+  <!-- BADGE ENREGISTREMENT GLOBAL (visible sur tous les écrans) -->
+  <div id="recBadge" class="rec-badge hidden" title="Voir mes enregistrements">
+    <div class="rb-top">
+      <span class="rb-dot">●</span>
+      <span class="rb-rec">REC</span>
+      <span id="rbChan" class="rb-chan">—</span>
+      <button id="rbStop" class="rb-stop" title="Arrêter l'enregistrement">⏹</button>
+    </div>
+    <div class="rb-meta">
+      <span id="rbStart">—</span>
+      <span id="rbTime">⏱ 00:00</span>
+      <span id="rbRemain"></span>
+      <span id="rbSize"></span>
+    </div>
+    <div class="rb-bar"><div id="rbProgress" class="rb-progress"></div></div>
   </div>
 
   <!-- MODAL RESTREAM -->
