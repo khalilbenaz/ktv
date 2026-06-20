@@ -14,7 +14,9 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** et **Windows (x64)** —
 - Interface à **sections** (barre latérale) : Accueil · Live TV · Films · Séries · Guide TV · Enregistrements · Réglages.
 - **Accueil** type streaming : hero « reprendre », rangées horizontales (Vu récemment, favoris, catégories).
 - **Accueil configurable** : choix dans *Réglages* des catégories (Live / Films / Séries) affichées en rangées, avec bouton **« tout voir »** ouvrant la catégorie complète.
-- Recherche globale, **vu récemment**, favoris.
+- Recherche globale, **vu récemment**, favoris. La rangée **« Reprendre la lecture »** se met à jour en temps réel à chaque retour sur l'accueil.
+- **Multi-comptes (multi-fournisseurs)** : plusieurs comptes Xtream mémorisés, sélecteur sur l'écran de connexion (clic = connexion, suppression à la demande). « Changer de compte » conserve la liste ; reconnexion automatique au dernier profil.
+- **Thème clair / sombre** : bascule ☀️/🌙 dans la barre du haut, préférence mémorisée.
 
 ### Lecture
 - Connexion Xtream (URL / utilisateur / mot de passe mémorisés, **reconnexion automatique** au lancement, bouton afficher/masquer le mot de passe).
@@ -23,6 +25,10 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** et **Windows (x64)** —
 - **Sidebar chaînes dans le lecteur** : à droite du player, liste repliable des chaînes de la **même catégorie** (logo + programme en cours) pour **zapper sans revenir à la liste complète**.
 - **Films (VOD)** et **Séries** (saisons/épisodes) — catégories françaises.
 - **Enchaînement automatique** de l'épisode suivant.
+- **Reprise de lecture** (VOD / séries) : la position est mémorisée et proposée à la relecture (« ▶ Reprise à … » avec option *Recommencer*).
+- **Pistes audio & sous-titres multiples** : sélecteurs 🔊 / 💬 dans le lecteur (pistes du flux HLS, et pistes natives quand le format le permet).
+- **Picture-in-Picture** 🗗 et **plein écran** ⛶.
+- **Raccourcis clavier** dans le lecteur : `espace`/`k` lecture-pause · `←`/`→` ±10 s · `↑`/`↓` volume · `m` muet · `f` plein écran · `p` PiP · `a` audio · `c` sous-titres · `n` épisode suivant.
 - **Guide TV** : grille EPG (programmes en cours + à venir) par catégorie, noms de chaînes longs affichés sur **2 lignes**.
 
 ### Enregistrement, partage, téléchargement
@@ -32,7 +38,7 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** et **Windows (x64)** —
 - **Suivi des enregistrements** : l'écran *Mes enregistrements* affiche les sections **⏺ En cours** (arrêt direct), **📅 Programmés** (annulation) et **💾 Enregistrés** (fichiers).
 - **Gestion « 1 connexion »** : pendant un enregistrement, cliquer sur la **chaîne enregistrée** la lit gratuitement via le relais local ; cliquer sur une **autre** chaîne affiche un avertissement avant d'arrêter l'enregistrement (impossible de tirer 2 flux à la fois sur un abonnement à 1 connexion).
   > 📦 Taille : enregistrement en copie de flux → ≈ `débit(Mbps) × durée(min) / 133` Go. Ex. un match beIN HD (~6 Mbps) de 2 h 30 ≈ **6–7 Go**.
-- **Restream** : une seule connexion fournisseur partagée vers plusieurs appareils du réseau local.
+- **Restream** : une seule connexion fournisseur partagée vers plusieurs appareils du réseau local. Le flux LAN et le lien public sont protégés par un **token de session aléatoire** (chemin `/<token>/index.m3u8`) ; la lecture locale (`127.0.0.1`) reste libre.
 - **Lien public** (Cloudflare, gratuit) pour diffuser hors du LAN.
 - **Téléchargements** : films et séries (épisode, **saison entière** ou **série complète**), **mis en file et traités un par un** (respect de la limite d'une seule connexion fournisseur), avec tiroir de progression.
 - EPG externe **XMLTV** en secours : correspondance **par tvg-id** (`epg_channel_id`) puis par **nom normalisé** (gère préfixes pays `FR:`/`TR:`, ballon stylisé `⚽`, exposants `ᴴᴰ`, choix de la langue) → récupère le programme des chaînes non taguées comme *beIN Sports*. Détails de l'abonnement.
@@ -73,7 +79,7 @@ npm run build:win
 Télécharge la dernière version depuis les [**Releases**](https://github.com/khalilbenaz/ktv/releases), décompresse, glisse **KTV.app** dans `/Applications`.
 
 ## Notes
-- Enregistrements : dossier choisi dans **Réglages → Changer le dossier**, sinon `~/IPTV Live Recordings`.
+- Enregistrements : dossier choisi dans **Réglages → Changer le dossier**, sinon `~/IPTV Live Recordings`. Si le dossier choisi devient inaccessible (disque externe débranché, dossier supprimé), KTV **retombe automatiquement** sur le dossier par défaut sans perdre la préférence.
 - Téléchargements : `~/IPTV Live Downloads`.
 - Le lien public télécharge `cloudflared` au 1er usage (stocké dans le dossier de données de l'app).
 

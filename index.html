@@ -13,6 +13,7 @@
     <div class="login-card">
       <div class="login-brand"><span class="logo">📡</span> KTV</div>
       <p class="sub">Connexion Xtream Codes</p>
+      <div id="loginProfiles" class="login-profiles hidden"></div>
       <input id="srv" type="text" placeholder="http://serveur:port" autocomplete="off" />
       <input id="usr" type="text" placeholder="Utilisateur" autocomplete="off" />
       <div class="pwd-wrap">
@@ -37,7 +38,7 @@
       <button class="nav" data-view="recordings"><span class="ic">⏺️</span> <span class="lbl">Enregistrements</span></button>
       <div class="spacer"></div>
       <button class="nav" data-view="settings"><span class="ic">⚙️</span> <span class="lbl">Réglages</span></button>
-      <button class="nav" id="navLogout"><span class="ic">🚪</span> <span class="lbl">Quitter</span></button>
+      <button class="nav" id="navLogout"><span class="ic">🚪</span> <span class="lbl">Changer de compte</span></button>
     </aside>
 
     <!-- MAIN -->
@@ -56,6 +57,7 @@
           <button id="rcToggle" class="rc-mini" title="Détails">▾</button>
           <button id="rcStop" class="rc-mini" title="Arrêter l'enregistrement">⏹</button>
         </div>
+        <button id="themeToggle" class="icon-btn" title="Changer de thème">☀️</button>
         <span class="chip" id="acctChip"><span class="dot"></span> <span id="acctTxt">—</span></span>
       </div>
 
@@ -155,12 +157,20 @@
           <div class="player-top">
             <button id="playerBack" class="icon-btn">‹ Retour</button>
             <span id="playerCrumb" class="crumb">—</span>
-            <button id="sidebarToggle" class="icon-btn hidden" title="Afficher/masquer les chaînes">☰ Chaînes</button>
+            <div class="player-tools">
+              <button id="btnAudio" class="icon-btn hidden" title="Piste audio (a)">🔊</button>
+              <button id="btnSubs" class="icon-btn hidden" title="Sous-titres (c)">💬</button>
+              <button id="btnPip" class="icon-btn hidden" title="Picture-in-Picture (p)">🗗</button>
+              <button id="btnFs" class="icon-btn" title="Plein écran (f)">⛶</button>
+              <button id="sidebarToggle" class="icon-btn hidden" title="Afficher/masquer les chaînes">☰ Chaînes</button>
+            </div>
           </div>
           <div class="player-body">
             <div class="player-wrap">
               <video id="video" controls autoplay playsinline></video>
               <div id="overlay" class="overlay">Sélectionnez un contenu</div>
+              <div id="resumeToast" class="resume-toast hidden"></div>
+              <div id="trackMenu" class="track-menu hidden"></div>
             </div>
             <aside id="chanSidebar" class="chan-sidebar hidden">
               <div class="cs-head">

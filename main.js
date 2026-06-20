@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const http = require('http');
 const https = require('https');
+const crypto = require('crypto');
 const { spawn, execFile, execFileSync } = require('child_process');
 
 // Au démarrage : tue les ffmpeg orphelins d'une instance KTV précédente
@@ -43,7 +44,7 @@ function publishPointer(streamUrl) {
     r.write(body); r.end();
   } catch {}
 }
-const relay = { proc: null, server: null, dir: null, url: '', transcode: false, stopping: false, restarts: 0, restartTimer: null, stableTimer: null };
+const relay = { proc: null, server: null, dir: null, url: '', token: '', transcode: false, stopping: false, restarts: 0, restartTimer: null, stableTimer: null };
 const tunnel = { proc: null, url: '' };
 
 let ffmpegPath = require('ffmpeg-static');
@@ -369,13 +370,29 @@ function getSettings() {
 }
 function saveSettings() { try { fs.writeFileSync(settingsFile(), JSON.stringify(_settings)); } catch {} }
 
-// Dossier d'enregistrement : dossier choisi par l'utilisateur, sinon racine du
-// profil (NON surveillée par « Accès contrôlé aux dossiers » de Windows)
+// Dossier par défaut : racine du profil (NON surveillée par « Accès contrôlé
+// aux dossiers » de Windows).
+function defaultRecordingsDir() { return path.join(app.getPath('home'), 'IPTV Live Recordings'); }
+
+// Crée le dossier si besoin et vérifie qu'il est accessible en écriture.
+function ensureWritableDir(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.accessSync(dir, fs.constants.W_OK);
+    return true;
+  } catch { return false; }
+}
+
+// Dossier d'enregistrement : dossier choisi par l'utilisateur s'il existe et
+// est accessible en écriture ; sinon repli automatique sur le dossier par
+// défaut (cas du disque externe débranché ou du dossier supprimé). On NE
+// supprime PAS la préférence : si le disque revient, on le réutilise.
 function recordingsDir() {
   const s = getSettings();
-  const dir = s.recDir || path.join(app.getPath('home'), 'IPTV Live Recordings');
-  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
-  return dir;
+  if (s.recDir && ensureWritableDir(s.recDir)) return s.recDir;
+  const def = defaultRecordingsDir();
+  ensureWritableDir(def);
+  return def;
 }
 
 ipcMain.handle('get-recordings-dir', () => recordingsDir());
@@ -906,8 +923,10 @@ async function startRelayInternal(url, name, opts = {}) {
   if (relay.proc) {
     // déjà actif (même chaîne) : on réutilise
     const ip = lanIp();
-    return { local: LOCAL_URL, lan: `http://${ip}:${RELAY_PORT}/index.m3u8`, ip, port: RELAY_PORT, name, reused: true };
+    return { local: LOCAL_URL, lan: `http://${ip}:${RELAY_PORT}/${relay.token}/index.m3u8`, ip, port: RELAY_PORT, name, reused: true };
   }
+  // Token aléatoire par session : exigé pour tout accès non-loopback (LAN + tunnel).
+  relay.token = crypto.randomBytes(16).toString('hex');
   relay.transcode = !!opts.transcode;
   const dir = path.join(os.tmpdir(), 'iptv-relay');
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
@@ -920,7 +939,19 @@ async function startRelayInternal(url, name, opts = {}) {
   spawnRelayFfmpeg();
 
   relay.server = http.createServer((req, res) => {
-    const file = path.join(dir, path.basename(req.url.split('?')[0]) || 'index.m3u8');
+    // Loopback (lecture/enregistrement locaux) : libre. Tout le reste (LAN, tunnel)
+    // doit présenter le token de session dans le chemin : /<token>/index.m3u8.
+    // Les segments .ts héritent du token via la résolution d'URL relative HLS.
+    const remote = req.socket.remoteAddress || '';
+    const isLoopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+    let reqPath = req.url.split('?')[0];
+    const tokenPrefix = `/${relay.token}/`;
+    if (reqPath.startsWith(tokenPrefix)) {
+      reqPath = reqPath.slice(tokenPrefix.length - 1);   // garde le slash menant
+    } else if (!isLoopback) {
+      res.writeHead(403); res.end(); return;
+    }
+    const file = path.join(dir, path.basename(reqPath) || 'index.m3u8');
     const ext = path.extname(file);
     fs.readFile(file, (err, data) => {
       if (err) { res.writeHead(404); res.end(); return; }
@@ -955,7 +986,7 @@ async function startRelayInternal(url, name, opts = {}) {
   await waitForFile(path.join(dir, 'index.m3u8'), 12000);
 
   const ip = lanIp();
-  return { local: LOCAL_URL, lan: `http://${ip}:${RELAY_PORT}/index.m3u8`, ip, port: RELAY_PORT, name };
+  return { local: LOCAL_URL, lan: `http://${ip}:${RELAY_PORT}/${relay.token}/index.m3u8`, ip, port: RELAY_PORT, name };
 }
 
 function waitForFile(file, timeoutMs) {
@@ -1120,8 +1151,10 @@ function stopTunnel() {
 }
 
 ipcMain.handle('tunnel-start', async () => {
+  if (!relay.proc || !relay.token) throw new Error('Démarrez le restream avant de créer un lien public.');
   stopTunnel();
   const bin = await ensureCloudflared();
+  const streamPath = `/${relay.token}/index.m3u8`;   // chemin protégé par le token de session
   return new Promise((resolve, reject) => {
     const args = ['tunnel', '--no-autoupdate', '--url', `http://127.0.0.1:${RELAY_PORT}`];
     const p = spawn(bin, args);
@@ -1133,8 +1166,8 @@ ipcMain.handle('tunnel-start', async () => {
       if (m && !settled) {
         settled = true;
         tunnel.url = m[0];
-        publishPointer(m[0] + '/index.m3u8');   // le site bascule automatiquement
-        resolve({ url: m[0] });
+        publishPointer(m[0] + streamPath);   // le site bascule automatiquement
+        resolve({ url: m[0], stream: m[0] + streamPath });
       }
     };
     p.stdout.on('data', onData);
