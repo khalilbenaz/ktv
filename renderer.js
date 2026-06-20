@@ -1650,38 +1650,71 @@ function fmtDate(ts) {
   return isNaN(d) ? '—' : d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
+// Petit utilitaire : crée une section de réglages avec titre + (sous-titre).
+function settingsSection(title, hint) {
+  const s = document.createElement('div');
+  s.className = 'settings-section';
+  s.innerHTML = `<h3>${title}</h3>` + (hint ? `<p class="hint">${hint}</p>` : '');
+  return s;
+}
+// Bouton « secondaire » uniforme (fond panel, pleine largeur).
+function settingsBtn(label) {
+  const b = document.createElement('button');
+  b.className = 'set-btn';
+  b.textContent = label;
+  return b;
+}
+
 async function buildSettings() {
   const i = state.info || {};
   const ui = i.user_info || {};
   const si = i.server_info || {};
   let recDir = '—';
   try { recDir = await window.api.getRecordingsDir(); } catch {}
+  const body = $('settingsBody');
+  body.innerHTML = '';
+
+  /* --- Compte & abonnement (grille compacte) --- */
+  const acct = settingsSection('👤 Compte &amp; abonnement');
   const rows = [
-    ['Message', ui.message || '—'],
     ['Statut', ui.status || '—', ui.status === 'Active' ? 'ok' : 'bad'],
-    ['Essai', ui.is_trial === '1' ? 'Oui' : 'Non'],
     ['Expiration', ui.exp_date ? fmtDate(ui.exp_date) : 'Illimité'],
     ['Connexions', `${ui.active_cons || 0} / ${ui.max_connections || '—'}`],
-    ['Créé le', fmtDate(ui.created_at)],
-    ['Formats', (ui.allowed_output_formats || []).join(', ') || '—'],
+    ['Essai', ui.is_trial === '1' ? 'Oui' : 'Non'],
+    ['Utilisateur', state.usr],
     ['Serveur', `${si.url || apiBase().replace(/^https?:\/\//, '')}${si.port ? ':' + si.port : ''}`],
+    ['Créé le', fmtDate(ui.created_at)],
     ['Fuseau', si.timezone || '—'],
-    ['Utilisateur', state.usr]
+    ['Formats', (ui.allowed_output_formats || []).join(', ') || '—'],
   ];
-  $('settingsBody').innerHTML = rows.map(([k, v, cls]) =>
-    `<div class="row"><span class="k">${k}</span><span class="v ${cls || ''}">${v}</span></div>`
-  ).join('') +
-    `<div class="row"><span class="k">Dossier d'enregistrement</span><span class="v" id="recDirVal">${recDir}</span></div>` +
-    `<button id="pickDirBtn" class="copy" style="background:var(--panel2);border:1px solid var(--line);color:var(--txt);">📁 Changer le dossier…</button>` +
-    `<button id="updBtn" class="copy" style="background:var(--panel2);border:1px solid var(--line);color:var(--txt);margin-top:8px;">🔄 Vérifier les mises à jour</button>` +
-    `<div class="row" style="margin-top:6px;"><span class="k">EPG externe (guide de secours)</span><span class="v" id="xmltvVal">…</span></div>` +
-    `<button id="xmltvBtn" class="copy" style="background:var(--panel2);border:1px solid var(--line);color:var(--txt);">📡 Activer/désactiver l'EPG externe</button>`;
-  $('pickDirBtn').onclick = async () => {
+  const grid = document.createElement('div');
+  grid.className = 'set-grid';
+  grid.innerHTML = rows.map(([k, v, cls]) =>
+    `<div class="set-cell"><span class="k">${k}</span><span class="v ${cls || ''}">${escapeHtml(String(v))}</span></div>`).join('');
+  acct.appendChild(grid);
+  if (ui.message) { const m = document.createElement('p'); m.className = 'hint'; m.style.marginTop = '10px'; m.textContent = ui.message; acct.appendChild(m); }
+  body.appendChild(acct);
+
+  /* --- Enregistrement --- */
+  const rec = settingsSection('💾 Enregistrement', 'Dossier où sont stockés les enregistrements et téléchargements.');
+  const recVal = document.createElement('div'); recVal.className = 'set-line';
+  recVal.innerHTML = `<span class="k">Dossier</span><span class="v" id="recDirVal">${escapeHtml(recDir)}</span>`;
+  const pickBtn = settingsBtn('📁 Changer le dossier…');
+  pickBtn.onclick = async () => {
     const r = await window.api.pickRecordingsDir();
     if (r.error) { alert(r.error); return; }
     if (!r.canceled) $('recDirVal').textContent = r.dir;
   };
-  $('updBtn').onclick = () => window.api.checkUpdate();
+  rec.appendChild(recVal); rec.appendChild(pickBtn);
+  body.appendChild(rec);
+
+  /* --- EPG externe --- */
+  const epg = settingsSection('🗓️ EPG externe', 'Guide de secours (XMLTV) quand le fournisseur n’a pas d’EPG.');
+  const epgVal = document.createElement('div'); epgVal.className = 'set-line';
+  epgVal.innerHTML = `<span class="k">État</span><span class="v" id="xmltvVal">…</span>`;
+  const epgBtn = settingsBtn('📡 Activer / désactiver l’EPG externe');
+  epg.appendChild(epgVal); epg.appendChild(epgBtn);
+  body.appendChild(epg);
   const refreshXmltv = async () => {
     try {
       const s = await window.api.xmltvStatus();
@@ -1689,14 +1722,24 @@ async function buildSettings() {
     } catch { $('xmltvVal').textContent = '—'; }
   };
   refreshXmltv();
-  $('xmltvBtn').onclick = async () => {
+  epgBtn.onclick = async () => {
     const s = await window.api.xmltvStatus();
     await window.api.xmltvConfig({ enabled: !s.enabled });
     setTimeout(refreshXmltv, 800);
   };
 
-  renderHomeCatPicker();
+  /* --- Mise à jour de l'application --- */
+  const upd = settingsSection('⬆️ Application', 'Vérifie les nouvelles versions sur GitHub.');
+  const updBtn = settingsBtn('🔄 Vérifier les mises à jour');
+  updBtn.onclick = () => window.api.checkUpdate();
+  upd.appendChild(updBtn);
+  body.appendChild(upd);
+
+  /* --- Sections additionnelles (features.js) : Lecture, Diagnostic, MAJ auto, TMDB, Trakt, Sources --- */
   if (typeof ktvBuildSettingsExtras === 'function') ktvBuildSettingsExtras();
+
+  /* --- Accueil (catégories) --- */
+  renderHomeCatPicker();
 }
 
 // Sélecteur des catégories affichées sur l'accueil (Live / Films / Séries)
