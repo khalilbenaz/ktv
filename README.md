@@ -14,11 +14,19 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** et **Windows (x64)** —
 - **Catch-up / Archive (timeshift)** : sur les chaînes avec archive, bouton **⏪ Revoir** dans le lecteur (catalogue des rediffusions) et programmes passés rejouables directement depuis le **Guide TV**.
 - **Sources multiples / fusion** : ajout de playlists **M3U/M3U8** et de **comptes Xtream secondaires** dans *Réglages* — leurs chaînes apparaissent dans Live TV (lecture, enregistrement et restream gérés par source).
 - **Enrichissement TMDB** : affiches, notes, synopsis, genres et **casting** pour Films & Séries, avec **fiche film** détaillée.
-- **Synchronisation Trakt** : liaison par **code device** ou **PIN**, marquage *vu* automatique en fin de film/épisode, ajout à la **watchlist**.
+- **Synchronisation Trakt** : liaison par **code device** ou **PIN**, marquage *vu* automatique **à ~90 % de la lecture** (avant le générique, y compris depuis « Reprendre »), ajout à la **watchlist**.
 - **Tampon / cache configurable** (faible latence / équilibré / stable) + **overlay statistiques réseau** (📊 résolution, débit, tampon, images perdues, latence).
 - **Test de débit & diagnostic fournisseur** : latence API, débit du flux, connexions actives/max, expiration.
 - **Mise à jour automatique programmée** du contenu (chaînes, films, séries, EPG).
 - **Recherche globale** : chaînes + films + séries + **programmes EPG** en une seule vue.
+
+#### Configurer Trakt
+1. Crée une application sur **[trakt.tv/oauth/applications](https://trakt.tv/oauth/applications)** avec **Redirect URI** = `urn:ietf:wg:oauth:2.0:oob`.
+2. Dans KTV → *Réglages → Synchronisation Trakt*, colle le **Client ID** et le **Client Secret**.
+3. Connecte-toi via **« Connecter (code device) »** (code à saisir sur `trakt.tv/activate`) ou via **PIN** (« Obtenir un PIN » puis « Coller le PIN et lier »).
+
+#### Configurer des sources multiples
+*Réglages → Sources multiples* : ajoute une **playlist M3U** (URL) ou un **compte Xtream secondaire**, puis « Actualiser maintenant ». Les chaînes sont fusionnées dans **Live TV** (catégories préfixées 📁/🔗).
 
 ### Navigation & accueil
 - Interface à **sections** (barre latérale) : Accueil · Live TV · Films · Séries · Guide TV · Enregistrements · Réglages.
