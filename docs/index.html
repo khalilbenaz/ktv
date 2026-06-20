@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>IPTV Live — Lecteur Xtream, enregistrement & partage</title>
-  <meta name="description" content="Lecteur Xtream Codes pour macOS : live TV, enregistrement, restream LAN/public et export WhatsApp." />
-  <meta property="og:title" content="IPTV Live" />
-  <meta property="og:description" content="Lecteur Xtream live TV avec enregistrement, restream et export WhatsApp — pour macOS." />
+  <title>KTV — Lecteur Xtream, enregistrement & partage</title>
+  <meta name="description" content="Lecteur Xtream Codes pour macOS & Windows : live TV, vraie 4K, enregistrement programmé, restream LAN/public et export WhatsApp." />
+  <meta property="og:title" content="KTV" />
+  <meta property="og:description" content="Lecteur Xtream live TV (macOS & Windows) : vraie 4K, enregistrement programmé, restream et export WhatsApp." />
   <meta property="og:type" content="website" />
   <link rel="icon" href="icon.png" />
-  <meta property="og:image" content="https://khalilbenaz.github.io/iptv-live/icon.png" />
+  <meta property="og:image" content="https://khalilbenaz.github.io/ktv/icon.png" />
   <style>
     :root {
       --bg: #0b0d12; --panel: #141821; --panel2: #1c2130; --line: #262c3a;
-      --txt: #e8ebf2; --muted: #8b93a7; --accent: #ff3b5c; --accent2: #4f8cff;
+      --txt: #e8ebf2; --muted: #8b93a7; --accent: #ff6a2c; --accent2: #4f8cff;
     }
     * { box-sizing: border-box; }
     body {
@@ -25,12 +25,14 @@
     header { text-align: center; padding: 80px 0 50px; }
     .logo-img { width: 128px; height: 128px; border-radius: 28px; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
     h1 { font-size: clamp(2rem, 6vw, 3.2rem); margin: 12px 0 6px; letter-spacing: -.02em; }
-    .tagline { color: var(--muted); font-size: clamp(1rem, 3vw, 1.25rem); margin: 0 auto 30px; max-width: 620px; }
+    .tagline { color: var(--muted); font-size: clamp(1rem, 3vw, 1.25rem); margin: 0 auto 26px; max-width: 640px; }
+    .ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
     .cta { display: inline-flex; align-items: center; gap: 10px; background: var(--accent); color: #fff;
-      text-decoration: none; font-weight: 700; padding: 15px 30px; border-radius: 12px; font-size: 1.05rem;
-      box-shadow: 0 12px 30px rgba(255,59,92,.3); transition: transform .08s, filter .15s; }
+      text-decoration: none; font-weight: 700; padding: 15px 28px; border-radius: 12px; font-size: 1.05rem;
+      box-shadow: 0 12px 30px rgba(255,106,44,.3); transition: transform .08s, filter .15s; }
+    .cta.win { background: var(--panel2); border: 1px solid var(--line); box-shadow: none; }
     .cta:hover { filter: brightness(1.08); } .cta:active { transform: scale(.98); }
-    .sub-links { margin-top: 16px; font-size: .9rem; }
+    .sub-links { margin-top: 18px; font-size: .9rem; }
     .sub-links a { color: var(--accent2); text-decoration: none; margin: 0 8px; }
     .sub-links a:hover { text-decoration: underline; }
     .badge { display: inline-block; background: var(--panel2); border: 1px solid var(--line); color: var(--muted);
@@ -46,6 +48,7 @@
     .steps { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 8px 24px; }
     .steps li { margin: 14px 0; color: var(--muted); }
     .steps b { color: var(--txt); }
+    .os-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
     code { background: #0e1320; color: var(--accent2); padding: 2px 7px; border-radius: 6px; font-size: .9em; word-break: break-all; }
     .note { color: var(--muted); font-size: .9rem; border-left: 3px solid var(--accent2); padding-left: 14px; margin: 18px 0; }
     footer { text-align: center; color: var(--muted); font-size: .85rem; padding: 50px 0 60px; border-top: 1px solid var(--line); margin-top: 40px; }
@@ -55,43 +58,56 @@
 <body>
   <header>
     <div class="wrap">
-      <img class="logo-img" src="icon.png" alt="IPTV Live" width="128" height="128" />
-      <h1>IPTV Live</h1>
-      <p class="tagline">Lecteur Xtream Codes pour macOS — regarde, enregistre, restreame et partage tes chaînes en direct.</p>
-      <span class="badge">macOS · Apple Silicon (arm64)</span><br>
-      <a class="cta" href="https://github.com/khalilbenaz/iptv-live/releases/latest" id="dl">⬇️ Télécharger pour macOS</a>
+      <img class="logo-img" src="icon.png" alt="KTV" width="128" height="128" />
+      <h1>KTV</h1>
+      <p class="tagline">Lecteur Xtream Codes pour macOS &amp; Windows — regarde en direct (vraie 4K), enregistre, programme, restreame et partage tes chaînes.</p>
+      <span class="badge">macOS (Apple Silicon) · Windows (x64)</span>
+      <div class="ctas">
+        <a class="cta" href="https://github.com/khalilbenaz/ktv/releases/latest/download/KTV-macos-arm64.zip"> Télécharger pour macOS</a>
+        <a class="cta win" href="https://github.com/khalilbenaz/ktv/releases/latest/download/KTV-windows-x64.zip">⊞ Télécharger pour Windows</a>
+      </div>
       <div class="sub-links">
-        <a href="https://github.com/khalilbenaz/iptv-live">Code source</a> ·
-        <a href="https://github.com/khalilbenaz/iptv-live/releases">Toutes les versions</a>
+        <a href="https://github.com/khalilbenaz/ktv">Code source</a> ·
+        <a href="https://github.com/khalilbenaz/ktv/releases/latest">Dernière version</a> ·
+        <a href="https://github.com/khalilbenaz/ktv/releases">Toutes les versions</a>
       </div>
     </div>
   </header>
 
   <main class="wrap">
     <div class="grid">
-      <div class="card"><div class="ico">📺</div><h3>Live TV Xtream</h3><p>Connexion Xtream Codes, navigation par catégories et qualité (8K/4K/FHD/HD), lecture fluide HLS/TS.</p></div>
-      <div class="card"><div class="ico">⏺</div><h3>Enregistrement</h3><p>Enregistre une chaîne en MP4. Fichiers sains et lisibles partout (VLC, QuickTime), durée correcte.</p></div>
+      <div class="card"><div class="ico">📺</div><h3>Live TV Xtream</h3><p>Connexion Xtream Codes, navigation par catégories et qualité (8K/4K/FHD/HD), EPG, lecture fluide HLS/TS.</p></div>
+      <div class="card"><div class="ico">🎬</div><h3>Vraie 4K automatique</h3><p>Détecte les vrais flux 4K (HEVC) et les transcode en matériel (GPU) pour une lecture fluide — sans toucher aux fausses « 4K ».</p></div>
+      <div class="card"><div class="ico">⏺</div><h3>Enregistrement programmé</h3><p>Programme un enregistrement (début + durée ou heure de fin) avec arrêt automatique. Suivi en direct (durée, taille).</p></div>
       <div class="card"><div class="ico">📡</div><h3>Restream LAN</h3><p>Une seule connexion fournisseur partagée vers tous tes appareils du réseau Wi-Fi.</p></div>
       <div class="card"><div class="ico">🌍</div><h3>Lien public</h3><p>Crée une URL HTTPS publique (Cloudflare) pour regarder hors du réseau local.</p></div>
       <div class="card"><div class="ico">📱</div><h3>Export WhatsApp</h3><p>Convertit en un clic vers un MP4 compatible WhatsApp (AAC-LC + 30 fps) — son garanti au partage.</p></div>
-      <div class="card"><div class="ico">📼</div><h3>Mes enregistrements</h3><p>Liste de tes captures avec filtre par chaîne, recherche et pagination.</p></div>
+      <div class="card"><div class="ico">🎞️</div><h3>Films &amp; Séries</h3><p>VOD et séries (saisons/épisodes) avec enchaînement automatique et téléchargements.</p></div>
+      <div class="card"><div class="ico">📼</div><h3>Mes enregistrements</h3><p>En cours, programmés et enregistrés — avec filtre par chaîne, recherche et pagination.</p></div>
     </div>
 
     <section>
       <h2>Installation</h2>
-      <ol class="steps">
-        <li><b>Télécharge</b> le fichier <code>.dmg</code> depuis le bouton ci-dessus.</li>
-        <li><b>Ouvre le DMG</b> et glisse <b>IPTV Live</b> dans le dossier <b>Applications</b>.</li>
-        <li><b>Clic-droit → Ouvrir</b> (l'app n'est pas notarisée par Apple — à faire une seule fois).</li>
-        <li>Si macOS bloque : <code>xattr -dr com.apple.quarantine "/Applications/IPTV Live.app"</code></li>
-      </ol>
-      <p class="note">Build pour Mac <b>Apple Silicon (M1/M2/M3+)</b>. Application open-source sous licence MIT.</p>
+      <div class="os-cols">
+        <ol class="steps">
+          <li><b>macOS</b> — décompresse <code>KTV-macos-arm64.zip</code>.</li>
+          <li>Glisse <b>KTV</b> dans le dossier <b>Applications</b>.</li>
+          <li><b>Clic-droit → Ouvrir</b> (app non notarisée — une seule fois).</li>
+          <li>Si bloqué : <code>xattr -dr com.apple.quarantine "/Applications/KTV.app"</code></li>
+        </ol>
+        <ol class="steps">
+          <li><b>Windows</b> — décompresse <code>KTV-windows-x64.zip</code>.</li>
+          <li>Lance <b>KTV.exe</b>.</li>
+          <li>Si SmartScreen apparaît : <b>Informations complémentaires</b> → <b>Exécuter quand même</b>.</li>
+        </ol>
+      </div>
+      <p class="note">macOS <b>Apple Silicon (M1/M2/M3+)</b> · Windows <b>x64</b>. Application open-source sous licence MIT. Binaires construits automatiquement (GitHub Actions).</p>
     </section>
   </main>
 
   <footer>
     <div class="wrap">
-      <p>IPTV Live — projet open-source · <a href="https://github.com/khalilbenaz/iptv-live">github.com/khalilbenaz/iptv-live</a></p>
+      <p>KTV — projet open-source · <a href="https://github.com/khalilbenaz/ktv">github.com/khalilbenaz/ktv</a></p>
     </div>
   </footer>
 </body>
