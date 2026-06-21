@@ -1217,37 +1217,61 @@ async function loadCategoryChannels(catId) {
   }
   return state.allByCat[catId];
 }
-async function buildPlayerSidebar(active) {
-  const aside = $('chanSidebar'), list = $('csList'), toggle = $('sidebarToggle');
-  let chans = (state.channels || []).filter((c) => !isJunkChannel(c));
-  let inList = active && chans.some((c) => c.stream_id == active.stream_id);
-  // chaîne lancée hors de la liste courante (ex. "Reprendre") : charger sa catégorie
-  if (active && !inList && active.category_id) {
-    try {
-      const cat = String(active.category_id);
-      state.channels = await loadCategoryChannels(cat);
-      state.curLiveCat = cat;
-      chans = (state.channels || []).filter((c) => !isJunkChannel(c));
-      inList = chans.some((c) => c.stream_id == active.stream_id);
-    } catch {}
+// Remplit le sélecteur de catégorie de la sidebar (catégories live + sources + favoris).
+function fillSidebarCatSelect(selectedCat) {
+  const sel = $('csCat');
+  if (!sel) return;
+  sel.innerHTML = '';
+  if (state.favs && state.favs.length) {
+    const o = document.createElement('option');
+    o.value = 'favs'; o.textContent = `★ Favoris (${state.favs.length})`;
+    sel.appendChild(o);
   }
-  // seulement si la chaîne jouée appartient à la catégorie courante (même liste)
-  if (!active || chans.length < 2 || !inList) { aside.classList.add('hidden'); toggle.classList.add('hidden'); return; }
+  for (const c of state.categories) {
+    const o = document.createElement('option');
+    o.value = c.category_id; o.textContent = c.category_name;
+    sel.appendChild(o);
+  }
+  if (selectedCat != null) sel.value = String(selectedCat);
+}
+
+async function buildPlayerSidebar(active) {
+  const aside = $('chanSidebar'), toggle = $('sidebarToggle');
+  if (!active || !state.categories || !state.categories.length) { aside.classList.add('hidden'); toggle.classList.add('hidden'); return; }
   toggle.classList.remove('hidden');
   aside.classList.remove('hidden');
   aside.classList.toggle('collapsed', localStorage.getItem('player_sidebar') === '0');
-  // Même catégorie déjà construite : on met juste à jour la chaîne active (garde le scroll)
-  if (state.sidebarCat === state.curLiveCat && list.childElementCount) {
-    list.querySelectorAll('.cs-item').forEach((el) => {
+  // Catégorie affichée = celle de la chaîne jouée si connue, sinon la dernière affichée / la 1re.
+  let cat = active.category_id != null ? String(active.category_id) : null;
+  if (!cat || !state.categories.some((c) => String(c.category_id) === cat)) {
+    cat = state.sidebarCat || state.curLiveCat || (state.categories[0] && String(state.categories[0].category_id));
+  }
+  fillSidebarCatSelect(cat);
+  // Même catégorie déjà affichée : on met juste à jour la surbrillance (garde le scroll).
+  if (state.sidebarCat === String(cat) && $('csList').childElementCount) {
+    $('csList').querySelectorAll('.cs-item').forEach((el) => {
       const on = el.dataset.id == active.stream_id;
       el.classList.toggle('active', on);
       if (on) el.scrollIntoView({ block: 'nearest' });
     });
     return;
   }
-  state.sidebarCat = state.curLiveCat;
+  await renderSidebarCategory(cat, active.stream_id);
+}
+
+// Charge et affiche les chaînes d'une catégorie dans la sidebar (sans changer la lecture).
+async function renderSidebarCategory(catId, activeId) {
+  const list = $('csList');
+  list.innerHTML = '<div class="cs-empty">Chargement…</div>';
+  let chans;
+  if (String(catId) === 'favs') chans = state.favs || [];
+  else { try { chans = await loadCategoryChannels(String(catId)); } catch { chans = []; } }
+  chans = (chans || []).filter((c) => !isJunkChannel(c));
+  state.sidebarChans = chans;
+  state.sidebarCat = String(catId);
   $('csTitle').textContent = `Chaînes (${chans.length})`;
   list.innerHTML = '';
+  if (!chans.length) { list.innerHTML = '<div class="cs-empty">Aucune chaîne.</div>'; return; }
   if (!csEpgObserver) {
     csEpgObserver = new IntersectionObserver((ents) => {
       ents.forEach((e) => { if (e.isIntersecting) { csEpgObserver.unobserve(e.target); fillSidebarEpg(e.target); } });
@@ -1255,7 +1279,7 @@ async function buildPlayerSidebar(active) {
   }
   for (const c of chans) {
     const el = document.createElement('div');
-    el.className = 'cs-item' + (c.stream_id == active.stream_id ? ' active' : '');
+    el.className = 'cs-item' + (c.stream_id == activeId ? ' active' : '');
     el.dataset.id = c.stream_id;
     const logo = c.stream_icon
       ? `<img src="${escapeHtml(c.stream_icon)}" loading="lazy" onerror="this.remove()">`
@@ -1270,8 +1294,14 @@ async function buildPlayerSidebar(active) {
   const act = list.querySelector('.cs-item.active');
   if (act) act.scrollIntoView({ block: 'center' });
 }
+
+// Changement manuel de catégorie depuis la sidebar (ne change pas la lecture en cours).
+function onSidebarCatChange(catId) {
+  renderSidebarCategory(catId, state.current && state.current.stream_id);
+}
+
 async function fillSidebarEpg(el) {
-  const ch = (state.channels || []).find((c) => c.stream_id == el.dataset.id);
+  const ch = (state.sidebarChans || state.channels || []).find((c) => c.stream_id == el.dataset.id);
   const prog = el.querySelector('.cs-prog');
   if (!ch || !prog) return;
   const e = await getChannelEpg(ch);
@@ -2246,6 +2276,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('playerBack').onclick = () => showView(state.browse);
   $('sidebarToggle').onclick = togglePlayerSidebar;
   $('csCollapse').onclick = togglePlayerSidebar;
+  $('csCat').onchange = (e) => onSidebarCatChange(e.target.value);
   $('recBtn').onclick = toggleRecord;
   $('relayBtn').onclick = toggleRelay;
   $('scheduleBtn').onclick = openScheduleModal;
