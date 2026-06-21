@@ -48,11 +48,15 @@ function ktvToast(msg) {
 function yearOf(name) { const m = String(name || '').match(/\b(19|20)\d{2}\b/); return m ? m[0] : ''; }
 function cleanTitle(name) {
   let s = String(name || '');
-  s = s.replace(/^\s*[A-Z]{2,4}\s*[-|:]\s*/, '');                 // préfixe "FR|", "VOD -"
-  s = s.replace(/[\[\(][^\]\)]*[\]\)]/g, ' ');                    // (…) [..]
-  s = s.replace(/\b(19|20)\d{2}\b/g, ' ');                        // année
-  s = s.replace(/\b(4K|UHD|FHD|HD|SD|VF|VFF|VFQ|VO|VOSTFR|MULTI|TRUEFRENCH|FRENCH|H264|H265|X264|X265|HEVC|WEB|BLURAY|BDRIP)\b/gi, ' ');
-  s = s.replace(/[._]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  s = s.replace(/[ᴴᴰᵁᴷᶠˢᴾᴿᴬᵂʰᵉᵛᶜᵖᵈᴺᴹᵃⁿᵗʜᴅ⁰¹²³⁴⁵⁶⁷⁸⁹]/g, ' ');          // exposants (ᴴᴰ, ⁴ᴷ…)
+  s = s.replace(/^\s*[A-Za-z0-9]{1,4}\s*[-|:•▎–]\s*/, '');                 // préfixe court "FR|", "4K -", "VOD:"
+  s = s.replace(/[\[\(][^\]\)]*[\]\)]/g, ' ');                             // (…) [..]
+  s = s.replace(/\b(19|20)\d{2}\b/g, ' ');                                 // année
+  s = s.replace(/\b\d{3,4}p\b/gi, ' ');                                    // 2160p / 1080p / 720p
+  s = s.replace(/\b(4K|8K|UHD|QHD|FHD|HD|SD|HDR10?|HDR|DV|DOLBY|ATMOS|IMAX|REMUX|BLU[\-\. ]?RAY|BDRIP|BRRIP|WEB[\-\. ]?RIP|WEB[\-\. ]?DL|HDRIP|DVD[\-\. ]?RIP|AMZN|NF|DSNP|ATVP|MAX|MULTI|VFF|VFQ|VF2|VFI|VOF|VF|VO|VOST(?:FR)?|TRUE[\-\. ]?FRENCH|SUB[\-\. ]?FRENCH|FRENCH|H\.?264|H\.?265|X264|X265|HEVC|AVC|AAC|AC3|EAC3|DTS|DDP?5\.1|10\s?BITS?)\b/gi, ' ');
+  s = s.replace(/[._]+/g, ' ');
+  s = s.replace(/[^\p{L}\p{N} :!?'&-]/gu, ' ');                            // retire emojis / symboles
+  s = s.replace(/\s{2,}/g, ' ').replace(/^[\s:–·\-]+|[\s:–·\-]+$/g, '').trim();
   return s || String(name || '').trim();
 }
 
@@ -418,16 +422,20 @@ function ktvTmdbCacheSet(k, v) {
 }
 async function ktvTmdbSearch(type, title, year) {
   if (!ktvSetting('tmdbEnabled') || !ktvSetting('tmdbKey')) return null;
-  const ck = 's|' + type + '|' + title + '|' + (year || '');
+  const ck = 's2|' + type + '|' + title + '|' + (year || '');   // s2 = invalide l'ancien cache (titres mieux nettoyés)
   const c = ktvTmdbCacheGet(ck); if (c !== undefined) return c;
-  let v = null;
-  try {
-    const q = cleanTitle(title);
-    const yr = year || yearOf(title);
-    const path = '/search/' + (type === 'tv' ? 'tv' : 'movie') + '?query=' + encodeURIComponent(q) + (yr ? ('&' + (type === 'tv' ? 'first_air_date_year' : 'year') + '=' + yr) : '');
-    const data = await ktvTmdb(path);
-    v = (data && data.results && data.results[0]) || null;
-  } catch {}
+  const q = cleanTitle(title);
+  const yr = year || yearOf(title);
+  const yparam = type === 'tv' ? 'first_air_date_year' : 'year';
+  const tryQ = async (query, y) => {
+    if (!query || query.length < 2) return null;
+    const path = '/search/' + (type === 'tv' ? 'tv' : 'movie') + '?query=' + encodeURIComponent(query) + (y ? ('&' + yparam + '=' + y) : '');
+    try { const d = await ktvTmdb(path); return (d && d.results && d.results[0]) || null; } catch { return null; }
+  };
+  // 1) titre nettoyé + année · 2) sans année · 3) partie avant un séparateur
+  let v = await tryQ(q, yr);
+  if (!v && yr) v = await tryQ(q, '');
+  if (!v) { const short = q.split(/\s[:–-]\s|:/)[0].trim(); if (short && short !== q) v = await tryQ(short, ''); }
   ktvTmdbCacheSet(ck, v);
   return v;
 }
