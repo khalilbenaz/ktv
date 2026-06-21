@@ -7,6 +7,10 @@ const https = require('https');
 const crypto = require('crypto');
 const { spawn, execFile, execFileSync } = require('child_process');
 
+// Nom affiché dans la barre de menu macOS ("KTV", "Quitter KTV"…) — sinon
+// Electron prend le "name" du package.json (iptv-live).
+try { app.setName('KTV'); } catch {}
+
 // Au démarrage : tue les ffmpeg orphelins d'une instance KTV précédente
 // (relais/enregistrement laissés vivants après un crash ou un force-quit).
 // Sans ça, l'orphelin garde la connexion fournisseur ouverte → la lecture
