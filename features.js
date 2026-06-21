@@ -49,7 +49,8 @@ function yearOf(name) { const m = String(name || '').match(/\b(19|20)\d{2}\b/); 
 function cleanTitle(name) {
   let s = String(name || '');
   s = s.replace(/[ᴴᴰᵁᴷᶠˢᴾᴿᴬᵂʰᵉᵛᶜᵖᵈᴺᴹᵃⁿᵗʜᴅ⁰¹²³⁴⁵⁶⁷⁸⁹]/g, ' ');          // exposants (ᴴᴰ, ⁴ᴷ…)
-  s = s.replace(/^\s*[A-Za-z0-9]{1,4}\s*[-|:•▎–]\s*/, '');                 // préfixe court "FR|", "4K -", "VOD:"
+  // Préfixes courts répétés "4K-FR - ", "VOD: ", "FR | " (boucle : plusieurs préfixes empilés)
+  let _p; do { _p = s; s = s.replace(/^\s*[A-Za-z0-9]{1,4}\s*[-|:•▎–]\s*/, ''); } while (s !== _p);
   s = s.replace(/[\[\(][^\]\)]*[\]\)]/g, ' ');                             // (…) [..]
   s = s.replace(/\b(19|20)\d{2}\b/g, ' ');                                 // année
   s = s.replace(/\b\d{3,4}p\b/gi, ' ');                                    // 2160p / 1080p / 720p
@@ -451,7 +452,7 @@ function ktvPickResult(results, query, year) {
 }
 async function ktvTmdbSearch(type, title, year) {
   if (!ktvSetting('tmdbEnabled') || !ktvSetting('tmdbKey')) return null;
-  const ck = 's3|' + type + '|' + title + '|' + (year || '');   // s3 = invalide les mauvais matches mis en cache
+  const ck = 's4|' + type + '|' + title + '|' + (year || '');   // s4 = invalide les mauvais matches mis en cache
   const c = ktvTmdbCacheGet(ck); if (c !== undefined) return c;
   const q = cleanTitle(title);
   const yr = year || yearOf(title);
