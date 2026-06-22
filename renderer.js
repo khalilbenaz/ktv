@@ -558,11 +558,21 @@ function renderCatChips(kind) {
   if (!wrap || !sel) return;
   const cats = (isSeries ? state.seriesCats : state.vodCats) || [];
   const cur = sel.value;
+  // Si les chips existent déjà et que la liste n'a pas changé : on met juste à jour
+  // l'état actif (sans reconstruire → pas de saut de défilement ni de focus).
+  if (wrap.children.length === cats.length + 1) {
+    let active = null;
+    [...wrap.children].forEach((b) => { const on = String(b.dataset.val ?? '') === String(cur); b.classList.toggle('active', on); if (on) active = b; });
+    if (active) try { active.scrollIntoView({ inline: 'nearest', block: 'nearest' }); } catch {}
+    return;
+  }
+  const sl = wrap.scrollLeft;
   wrap.innerHTML = '';
   const mk = (val, label) => {
     const b = document.createElement('button');
     b.className = 'cat-chip' + (String(cur) === String(val) ? ' active' : '');
     b.textContent = label;
+    b.dataset.val = val;
     b.onclick = () => {
       sel.value = val;
       if (isSeries) { state.seriesPage = 1; renderSeries(); } else { state.vodPage = 1; renderMovies(); }
@@ -571,6 +581,7 @@ function renderCatChips(kind) {
   };
   wrap.appendChild(mk('', 'Toutes'));
   cats.forEach((c) => wrap.appendChild(mk(c.category_id, c.category_name)));
+  wrap.scrollLeft = sl;
 }
 
 // Barre de pagination (Précédent · pages · Suivant).
