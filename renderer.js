@@ -937,6 +937,32 @@ function recentCard(r) {
   return card;
 }
 
+// Lecture d'une bande-annonce dans un overlay intégré (iframe YouTube), sans nouvelle fenêtre.
+function ktvPlayTrailer(key) {
+  if (!key) return;
+  let ov = document.getElementById('trailerOverlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'trailerOverlay';
+    ov.className = 'trailer-overlay hidden';
+    ov.innerHTML = '<div class="trailer-box"><button class="trailer-x" title="Fermer (Échap)">✕</button><div class="trailer-frame"></div></div>';
+    document.body.appendChild(ov);
+    const close = () => { ov.classList.add('hidden'); const f = ov.querySelector('.trailer-frame'); if (f) f.innerHTML = ''; };
+    ov.querySelector('.trailer-x').onclick = close;
+    ov.onclick = (e) => { if (e.target === ov) close(); };
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !ov.classList.contains('hidden')) close(); });
+  }
+  const frame = ov.querySelector('.trailer-frame');
+  frame.innerHTML = '';
+  const ifr = document.createElement('iframe');
+  ifr.src = `https://www.youtube-nocookie.com/embed/${key}?autoplay=1&rel=0&modestbranding=1`;
+  ifr.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
+  ifr.allowFullscreen = true;
+  ifr.setAttribute('frameborder', '0');
+  frame.appendChild(ifr);
+  ov.classList.remove('hidden');
+}
+
 function buildHero(item) {
   const IMG = 'https://image.tmdb.org/t/p/';
   const hero = document.createElement('div');
@@ -1006,7 +1032,7 @@ function buildHero(item) {
           const yt = await ktvTrailerKey(type, hit.id);
           if (yt) {
             const tb = document.createElement('button'); tb.className = 'btn ghost'; tb.textContent = '▶ Bande-annonce';
-            tb.onclick = () => window.open('https://www.youtube.com/watch?v=' + yt, '_blank', 'noreferrer');
+            tb.onclick = () => ktvPlayTrailer(yt);
             btns.appendChild(tb);
           }
         }
