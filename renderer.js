@@ -57,6 +57,7 @@ const state = {
   // VOD / séries
   vod: null, vodCats: [],
   series: null, seriesCats: [],
+  vodPage: 1, seriesPage: 1,   // pagination des grilles films / séries
   resumeKey: null,   // clé de reprise du contenu en cours (VOD / série)
   // caches EPG (cartes live + guide)
   epgCache: {}
@@ -286,8 +287,8 @@ function onSearch() {
   // Recherche globale (chaînes + films + séries + EPG) gérée par features.js.
   if (typeof ktvSearchInput === 'function') return ktvSearchInput();
   if (state.view === 'live') renderLiveGrid();
-  else if (state.view === 'movies') renderMovies();
-  else if (state.view === 'series') renderSeries();
+  else if (state.view === 'movies') { state.vodPage = 1; renderMovies(); }
+  else if (state.view === 'series') { state.seriesPage = 1; renderSeries(); }
 }
 
 /* ---------- LIVE ---------- */
@@ -546,19 +547,73 @@ function renderVodShowcase(kind, show) {
   if (!uhd.length) addRail('Full HD', fhd, false);
 }
 
+const PAGE_SIZE = 60;
+
+// Liste de catégories cliquable (chips) pour Films / Séries — synchronisée avec le <select>.
+function renderCatChips(kind) {
+  const isSeries = kind === 'series';
+  const wrap = document.getElementById(isSeries ? 'seriesCatChips' : 'vodCatChips');
+  const sel = $(isSeries ? 'seriesCat' : 'vodCat');
+  if (!wrap || !sel) return;
+  const cats = (isSeries ? state.seriesCats : state.vodCats) || [];
+  const cur = sel.value;
+  wrap.innerHTML = '';
+  const mk = (val, label) => {
+    const b = document.createElement('button');
+    b.className = 'cat-chip' + (String(cur) === String(val) ? ' active' : '');
+    b.textContent = label;
+    b.onclick = () => {
+      sel.value = val;
+      if (isSeries) { state.seriesPage = 1; renderSeries(); } else { state.vodPage = 1; renderMovies(); }
+    };
+    return b;
+  };
+  wrap.appendChild(mk('', 'Toutes'));
+  cats.forEach((c) => wrap.appendChild(mk(c.category_id, c.category_name)));
+}
+
+// Barre de pagination (Précédent · pages · Suivant).
+function renderPager(containerId, page, totalPages, onGo) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '';
+  if (totalPages <= 1) return;
+  const btn = (label, target, opts = {}) => {
+    const b = document.createElement('button');
+    b.className = 'pg-btn' + (opts.active ? ' active' : '');
+    b.textContent = label;
+    if (opts.disabled) b.disabled = true; else b.onclick = () => onGo(target);
+    return b;
+  };
+  el.appendChild(btn('‹', page - 1, { disabled: page <= 1 }));
+  const win = 2;
+  const pages = [];
+  for (let p = 1; p <= totalPages; p++) {
+    if (p === 1 || p === totalPages || (p >= page - win && p <= page + win)) pages.push(p);
+    else if (pages[pages.length - 1] !== '…') pages.push('…');
+  }
+  pages.forEach((p) => { if (p === '…') { const s = document.createElement('span'); s.className = 'pg-dots'; s.textContent = '…'; el.appendChild(s); } else el.appendChild(btn(String(p), p, { active: p === page })); });
+  el.appendChild(btn('›', page + 1, { disabled: page >= totalPages }));
+}
+
 function renderMovies() {
   const grid = $('movieGrid');
   const cat = $('vodCat').value;
   const q = $('search').value.trim().toLowerCase();
   renderVodShowcase('movie', !cat && !q);
+  renderCatChips('movie');
   let items = state.vod || [];
   if (cat) items = items.filter((m) => m.category_id == cat);
   if (q) items = items.filter((m) => (m.name || '').toLowerCase().includes(q));
-  $('movieCount').textContent = `${items.length} film(s)`;
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (state.vodPage > totalPages) state.vodPage = 1;
+  const page = state.vodPage;
+  $('movieCount').textContent = `${total} film(s)` + (totalPages > 1 ? ` · page ${page}/${totalPages}` : '');
   grid.innerHTML = '';
-  if (!items.length) { grid.innerHTML = '<div class="loading">Aucun film.</div>'; return; }
+  if (!total) { grid.innerHTML = '<div class="loading">Aucun film.</div>'; renderPager('moviePager', 1, 1); return; }
   const frag = document.createDocumentFragment();
-  for (const m of items.slice(0, 600)) {
+  for (const m of items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)) {
     frag.appendChild(posterCard({
       title: m.name, cover: m.stream_icon || m.cover, rating: m.rating,
       progress: resumeProgress('movie:' + m.stream_id), remaining: resumeRemaining('movie:' + m.stream_id),
@@ -568,6 +623,7 @@ function renderMovies() {
     }));
   }
   grid.appendChild(frag);
+  renderPager('moviePager', page, totalPages, (p) => { state.vodPage = p; renderMovies(); try { grid.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch {} });
 }
 
 function playMovie(m) {
@@ -603,20 +659,26 @@ function renderSeries() {
   const cat = $('seriesCat').value;
   const q = $('search').value.trim().toLowerCase();
   renderVodShowcase('series', !cat && !q);
+  renderCatChips('series');
   let items = state.series || [];
   if (cat) items = items.filter((s) => s.category_id == cat);
   if (q) items = items.filter((s) => (s.name || '').toLowerCase().includes(q));
-  $('seriesCount').textContent = `${items.length} série(s)`;
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (state.seriesPage > totalPages) state.seriesPage = 1;
+  const page = state.seriesPage;
+  $('seriesCount').textContent = `${total} série(s)` + (totalPages > 1 ? ` · page ${page}/${totalPages}` : '');
   grid.innerHTML = '';
-  if (!items.length) { grid.innerHTML = '<div class="loading">Aucune série.</div>'; return; }
+  if (!total) { grid.innerHTML = '<div class="loading">Aucune série.</div>'; renderPager('seriesPager', 1, 1); return; }
   const frag = document.createDocumentFragment();
-  for (const s of items.slice(0, 600)) {
+  for (const s of items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)) {
     frag.appendChild(posterCard({
       title: s.name, cover: s.cover || s.stream_icon, rating: s.rating,
       onClick: () => openSeries(s), tmdb: { type: 'tv', title: s.name }
     }));
   }
   grid.appendChild(frag);
+  renderPager('seriesPager', page, totalPages, (p) => { state.seriesPage = p; renderSeries(); try { grid.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch {} });
 }
 
 let curSeries = null;
@@ -2545,8 +2607,8 @@ window.addEventListener('DOMContentLoaded', () => {
   $('search').addEventListener('input', onSearch);
   $('catSelect').onchange = (e) => loadChannels(e.target.value);
   $('qualSelect').addEventListener('change', renderLiveGrid);
-  $('vodCat').onchange = renderMovies;
-  $('seriesCat').onchange = renderSeries;
+  $('vodCat').onchange = () => { state.vodPage = 1; renderMovies(); };
+  $('seriesCat').onchange = () => { state.seriesPage = 1; renderSeries(); };
   $('guideCat').onchange = buildGuideGrid;
   $('guideRefresh').onclick = () => { state.epgCache = {}; buildGuideGrid(); };
 
