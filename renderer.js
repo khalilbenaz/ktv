@@ -595,7 +595,7 @@ function playEpisodeAt(q) {
   if (!ep) return;
   const ext = ep.container_extension || 'mp4';
   const label = `${q.name} · S${q.season}E${ep.episode_num}`;
-  pushRecent({ type: 'series', id: ep.id, name: label, icon: q.cover, ext });
+  pushRecent({ type: 'series', id: ep.id, name: label, icon: q.cover, ext, show: q.name, season: Number(q.season), episode: Number(ep.episode_num) });
   $('seriesModal').classList.add('hidden');
   playMedia(seriesUrl(ep.id, ext), label, false, '🎞️ Séries', 'series:' + ep.id);
   state.nowMeta = { type: 'episode', showTitle: q.name, season: Number(q.season), episode: Number(ep.episode_num) };
@@ -893,11 +893,24 @@ function recentCard(r) {
   badge.className = 'rc-badge';
   badge.textContent = r.type === 'live' ? 'EN DIRECT' : (r.type === 'movie' ? 'FILM' : 'SÉRIE');
   th.appendChild(badge);
+  // Saison / épisode pour les séries : champs dédiés, sinon parsés du titre (anciennes entrées).
+  let se = null;
+  if (r.type === 'series') {
+    if (r.season != null && r.episode != null) se = { s: r.season, e: r.episode };
+    else { const m = /S(\d+)\s*E(\d+)/i.exec(r.name || ''); if (m) se = { s: Number(m[1]), e: Number(m[2]) }; }
+  }
+  if (se) {
+    const ep = document.createElement('span');
+    ep.className = 'rc-ep';
+    ep.textContent = `S${se.s} · E${se.e}`;
+    th.appendChild(ep);
+  }
   const key = recentResumeKey(r);
   const prog = key ? resumeProgress(key) : 0;
   if (prog > 0) th.appendChild(progressBar('rc-prog', prog));
   const t = document.createElement('div');
-  t.className = 'rc-title'; t.textContent = r.name || '—';
+  t.className = 'rc-title';
+  t.textContent = (r.type === 'series' && r.show) ? r.show : (r.name || '—');
   card.appendChild(th); card.appendChild(t);
   card.onclick = () => {
     if (r.type === 'live') play({ stream_id: r.id, name: r.name, stream_icon: r.icon, category_id: r.cat });
