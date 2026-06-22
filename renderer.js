@@ -2054,7 +2054,9 @@ function resumeProgress(key) {
   const r = getResume(key);
   if (!r || !r.d) return 0;
   const p = r.t / r.d;
-  return (p > 0.01 && p < 0.99) ? p : 0;
+  // saveResume n'enregistre déjà que t >= 15 s (début significatif) et efface
+  // la quasi-fin → on montre la barre dès qu'une position existe.
+  return (p > 0 && p < 0.99) ? p : 0;
 }
 // Clé de reprise d'un élément "récent" (film / épisode de série). Null pour le live.
 function recentResumeKey(r) {
@@ -2068,7 +2070,9 @@ function progressBar(cls, p) {
   const bar = document.createElement('div');
   bar.className = cls;
   const fill = document.createElement('div');
-  fill.style.width = Math.min(100, Math.max(0, p * 100)) + '%';
+  // Largeur minimale visible (~4 %) pour qu'un début de lecture reste perceptible.
+  const pct = p > 0 ? Math.max(4, Math.min(100, p * 100)) : 0;
+  fill.style.width = pct + '%';
   bar.appendChild(fill);
   return bar;
 }
