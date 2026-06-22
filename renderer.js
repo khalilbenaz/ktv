@@ -450,6 +450,7 @@ async function ensureVod() {
   }
   fillContentCat($('vodCat'), state.vodCats, state.vod.length);
   renderMovies();
+  const v = document.getElementById('view-movies'); if (v) v.scrollTop = 0;
 }
 
 function fillContentCat(sel, cats, total) {
@@ -672,6 +673,7 @@ async function ensureSeries() {
   }
   fillContentCat($('seriesCat'), state.seriesCats, state.series.length);
   renderSeries();
+  const v = document.getElementById('view-series'); if (v) v.scrollTop = 0;
 }
 
 function renderSeries() {
