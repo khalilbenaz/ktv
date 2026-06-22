@@ -10,6 +10,18 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** et **Windows (x64)** —
 
 ## Fonctionnalités
 
+### ✨ Nouveautés v1.9 — refonte interface « premium »
+- **Accueil cinématographique** : grand **hero** avec **backdrop TMDB** plein cadre, synopsis, **Saison · Épisode**, **barre de progression + temps restant**, bouton **Reprendre**. Rangée **« Reprendre la lecture »** enrichie (sous-titre *Continuer · S01, E02*, badge **S/E**, barre + temps restant).
+- **Reprise réellement fonctionnelle** pour **films ET séries** (le hero/les cartes relancent à la bonne position) avec **barre de progression sur les vignettes** et **temps restant** (« ⏳ 1 h 05 »).
+- **Pages Films & Séries façon streaming** : **hero** en tête + **rails** *Tendances · Dernières sorties · Récemment ajoutés · 4K • UHD*. Les rails restent **globaux et constants** quand on change de catégorie (seule la grille filtre).
+- **Classement TMDB** : rail **« Tendances »** numéroté (rang 1..N) trié par note.
+- **Pagination** des grilles (60/page) + **liste de catégories cliquable** (chips) en remplacement du menu déroulant.
+- **EPG enrichi** : blocs programme avec **plage horaire (début–fin)**, **description**, marqueur **🔴 en direct** + barre de progression.
+- **Catch-up toujours accessible** : bouton **⏪** sur chaque chaîne du **Guide TV** + **« ⏪ Revoir »** dans le lecteur (la fenêtre indique « aucune rediffusion » si le fournisseur n'en a pas).
+- **Réglages en onglets** pleine largeur : navigation à gauche (fixe), contenu à droite — **fini le scroll interminable**.
+- **Rafraîchissement du catalogue** (films / séries) à la demande dans *Réglages → Catalogue*.
+- **Page de connexion redessinée** : fond animé (orbes + grille), carte en **verre dépoli** (glassmorphism), logo lumineux.
+
 ### ✨ Nouveautés v1.8
 - **Catch-up / Archive (timeshift)** : sur les chaînes avec archive, bouton **⏪ Revoir** dans le lecteur (catalogue des rediffusions) et programmes passés rejouables directement depuis le **Guide TV**.
 - **Sources multiples / fusion** : ajout de playlists **M3U/M3U8** et de **comptes Xtream secondaires** dans *Réglages* — leurs chaînes apparaissent dans Live TV (lecture, enregistrement et restream gérés par source).

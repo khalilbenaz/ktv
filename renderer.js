@@ -595,6 +595,13 @@ function renderCatChips(kind) {
   wrap.scrollLeft = sl;
 }
 
+// Amène le haut de la grille (chips) juste sous le haut de la vue, sans remonter au hero.
+function scrollToGridTop(view, target) {
+  if (!view || !target) return;
+  const top = target.getBoundingClientRect().top - view.getBoundingClientRect().top + view.scrollTop - 12;
+  view.scrollTop = Math.max(0, top);
+}
+
 // Barre de pagination (Précédent · pages · Suivant).
 function renderPager(containerId, page, totalPages, onGo) {
   const el = document.getElementById(containerId);
@@ -648,7 +655,7 @@ function renderMovies() {
     }));
   }
   grid.appendChild(frag);
-  renderPager('moviePager', page, totalPages, (p) => { state.vodPage = p; renderMovies(); if (view) view.scrollTop = 0; });
+  renderPager('moviePager', page, totalPages, (p) => { state.vodPage = p; renderMovies(); scrollToGridTop(view, $('vodCatChips') || grid); });
   if (view) { const d = grid.getBoundingClientRect().top - gBefore; if (d) view.scrollTop += d; }
 }
 
@@ -707,7 +714,7 @@ function renderSeries() {
     }));
   }
   grid.appendChild(frag);
-  renderPager('seriesPager', page, totalPages, (p) => { state.seriesPage = p; renderSeries(); if (view) view.scrollTop = 0; });
+  renderPager('seriesPager', page, totalPages, (p) => { state.seriesPage = p; renderSeries(); scrollToGridTop(view, $('seriesCatChips') || grid); });
   if (view) { const d = grid.getBoundingClientRect().top - gBefore; if (d) view.scrollTop += d; }
 }
 
