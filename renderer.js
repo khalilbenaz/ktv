@@ -521,10 +521,14 @@ function renderVodShowcase(kind, show, pool) {
   const isSeries = kind === 'series';
   const heroSlot = document.getElementById(isSeries ? 'seriesHero' : 'moviesHero');
   const railSlot = document.getElementById(isSeries ? 'seriesTrending' : 'moviesTrending');
-  if (heroSlot) heroSlot.innerHTML = '';
-  if (railSlot) railSlot.innerHTML = '';
-  if (!show) return;
   const all = pool || (isSeries ? state.series : state.vod) || [];
+  // Garde : ne rien reconstruire si l'état n'a pas changé (le showcase est global/constant,
+  // donc inchangé quand on change juste de catégorie → pas de clignotement ni de saut).
+  const sig = show ? ('on:' + all.length) : 'off';
+  if (railSlot && railSlot.dataset.sig === sig) return;
+  if (heroSlot) { heroSlot.innerHTML = ''; heroSlot.dataset.sig = sig; }
+  if (railSlot) { railSlot.innerHTML = ''; railSlot.dataset.sig = sig; }
+  if (!show) return;
   if (!all.length) return;
   const rated = all.filter((x) => Number(x.rating) > 0).sort((a, b) => Number(b.rating) - Number(a.rating));
   const featured = rated[0] || all[0];
@@ -622,8 +626,9 @@ function renderMovies() {
   const cat = $('vodCat').value;
   const q = $('search').value.trim().toLowerCase();
   renderCatChips('movie');
+  // Le showcase (hero + rails) reste global et constant ; seule la grille filtre.
+  renderVodShowcase('movie', !q, state.vod || []);
   const catItems = (state.vod || []).filter((m) => !cat || m.category_id == cat);
-  renderVodShowcase('movie', !q, catItems);
   let items = q ? catItems.filter((m) => (m.name || '').toLowerCase().includes(q)) : catItems;
   const total = items.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -683,8 +688,9 @@ function renderSeries() {
   const cat = $('seriesCat').value;
   const q = $('search').value.trim().toLowerCase();
   renderCatChips('series');
+  // Le showcase (hero + rails) reste global et constant ; seule la grille filtre.
+  renderVodShowcase('series', !q, state.series || []);
   const catItems = (state.series || []).filter((s) => !cat || s.category_id == cat);
-  renderVodShowcase('series', !q, catItems);
   let items = q ? catItems.filter((s) => (s.name || '').toLowerCase().includes(q)) : catItems;
   const total = items.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
