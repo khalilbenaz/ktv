@@ -474,7 +474,7 @@ function renderMovies() {
   for (const m of items.slice(0, 600)) {
     frag.appendChild(posterCard({
       title: m.name, cover: m.stream_icon || m.cover, rating: m.rating,
-      progress: resumeProgress('movie:' + m.stream_id),
+      progress: resumeProgress('movie:' + m.stream_id), remaining: resumeRemaining('movie:' + m.stream_id),
       onClick: () => (typeof ktvOpenMovie === 'function' ? ktvOpenMovie(m) : playMovie(m)),
       tmdb: { type: 'movie', title: m.name, year: (typeof yearOf === 'function' ? yearOf(m.name) : '') },
       onDownload: () => { const ext = m.container_extension || 'mp4'; startDownload(vodUrl(m.stream_id, ext), m.name || 'Film', ext); }
@@ -630,7 +630,7 @@ function downloadSeries() {
 }
 
 /* ---------- Carte affiche (films/séries) ---------- */
-function posterCard({ title, cover, rating, onClick, onDownload, tmdb, progress }) {
+function posterCard({ title, cover, rating, onClick, onDownload, tmdb, progress, remaining }) {
   const card = document.createElement('div');
   card.className = 'poster';
   const img = document.createElement('div');
@@ -651,6 +651,11 @@ function posterCard({ title, cover, rating, onClick, onDownload, tmdb, progress 
     dl.className = 'p-dl'; dl.textContent = '⬇'; dl.title = 'Télécharger';
     dl.onclick = (ev) => { ev.stopPropagation(); onDownload(); };
     img.appendChild(dl);
+  }
+  if (remaining && remaining > 60) {
+    const left = document.createElement('span');
+    left.className = 'p-left'; left.textContent = fmtRemaining(remaining);
+    img.appendChild(left);
   }
   if (progress && progress > 0) img.appendChild(progressBar('p-prog', progress));
   const t = document.createElement('div');
@@ -813,7 +818,7 @@ async function fillCategoryRows(cats, rows) {
         const items = (state.vod || []).filter((m) => String(m.category_id) === String(c.id)).slice(0, 20);
         if (items.length) setRowCards(row, items.map((m) => posterCard({
           title: m.name, cover: m.stream_icon || m.cover, rating: m.rating,
-          progress: resumeProgress('movie:' + m.stream_id),
+          progress: resumeProgress('movie:' + m.stream_id), remaining: resumeRemaining('movie:' + m.stream_id),
           onClick: () => (typeof ktvOpenMovie === 'function' ? ktvOpenMovie(m) : playMovie(m)),
           tmdb: { type: 'movie', title: m.name, year: (typeof yearOf === 'function' ? yearOf(m.name) : '') },
           onDownload: () => { const ext = m.container_extension || 'mp4'; startDownload(vodUrl(m.stream_id, ext), m.name || 'Film', ext); }
@@ -843,7 +848,7 @@ async function fillHomeContent(moviesRow, seriesRow) {
   try {
     await loadVodData();
     const recent = [...(state.vod || [])].sort((a, b) => (Number(b.added) || 0) - (Number(a.added) || 0)).slice(0, 18);
-    if (recent.length) setRowCards(moviesRow, recent.map((m) => posterCard({ title: m.name, cover: m.stream_icon || m.cover, rating: m.rating, progress: resumeProgress('movie:' + m.stream_id), onClick: () => (typeof ktvOpenMovie === 'function' ? ktvOpenMovie(m) : playMovie(m)), tmdb: { type: 'movie', title: m.name, year: (typeof yearOf === 'function' ? yearOf(m.name) : '') } })));
+    if (recent.length) setRowCards(moviesRow, recent.map((m) => posterCard({ title: m.name, cover: m.stream_icon || m.cover, rating: m.rating, progress: resumeProgress('movie:' + m.stream_id), remaining: resumeRemaining('movie:' + m.stream_id), onClick: () => (typeof ktvOpenMovie === 'function' ? ktvOpenMovie(m) : playMovie(m)), tmdb: { type: 'movie', title: m.name, year: (typeof yearOf === 'function' ? yearOf(m.name) : '') } })));
     else moviesRow.remove();
   } catch { moviesRow.remove(); }
   try {
@@ -907,6 +912,13 @@ function recentCard(r) {
   }
   const key = recentResumeKey(r);
   const prog = key ? resumeProgress(key) : 0;
+  const remain = key ? resumeRemaining(key) : 0;
+  if (remain > 60) {
+    const left = document.createElement('span');
+    left.className = 'rc-left';
+    left.textContent = fmtRemaining(remain);
+    th.appendChild(left);
+  }
   if (prog > 0) th.appendChild(progressBar('rc-prog', prog));
   const t = document.createElement('div');
   t.className = 'rc-title';
@@ -1783,6 +1795,44 @@ async function buildSettings() {
     setTimeout(refreshXmltv, 800);
   };
 
+  /* --- Catalogue VOD (films & séries) --- */
+  const cat = settingsSection('🎬 Catalogue', 'Recharge la liste des films et séries depuis le fournisseur (après ajout de nouveaux contenus).');
+  const btnMovies = settingsBtn('🎬 Rafraîchir les films');
+  const btnSeries = settingsBtn('🎞️ Rafraîchir les séries');
+  const btnBoth = settingsBtn('🔄 Tout rafraîchir');
+  const catMsg = document.createElement('span'); catMsg.className = 'hint'; catMsg.style.marginLeft = '10px';
+  const refreshCatalog = async (kind) => {
+    const doMovies = kind === 'movies' || kind === 'both';
+    const doSeries = kind === 'series' || kind === 'both';
+    [btnMovies, btnSeries, btnBoth].forEach((b) => { b.disabled = true; });
+    catMsg.textContent = '⏳ Actualisation…';
+    try {
+      const parts = [];
+      if (doMovies) {
+        state.vod = null; state.vodCats = [];
+        await loadVodData();
+        parts.push(`${(state.vod || []).length} films`);
+        if (state.view === 'movies') { fillContentCat($('vodCat'), state.vodCats, state.vod.length); renderMovies(); }
+      }
+      if (doSeries) {
+        state.series = null; state.seriesCats = [];
+        await loadSeriesData();
+        parts.push(`${(state.series || []).length} séries`);
+        if (state.view === 'series') { fillContentCat($('seriesCat'), state.seriesCats, state.series.length); renderSeries(); }
+      }
+      catMsg.textContent = '✓ ' + parts.join(' · ') + ' à jour';
+    } catch (e) {
+      catMsg.textContent = '⚠️ ' + ((e && e.message) ? e.message : 'échec du rafraîchissement');
+    } finally {
+      [btnMovies, btnSeries, btnBoth].forEach((b) => { b.disabled = false; });
+    }
+  };
+  btnMovies.onclick = () => refreshCatalog('movies');
+  btnSeries.onclick = () => refreshCatalog('series');
+  btnBoth.onclick = () => refreshCatalog('both');
+  cat.appendChild(btnMovies); cat.appendChild(btnSeries); cat.appendChild(btnBoth); cat.appendChild(catMsg);
+  body.appendChild(cat);
+
   /* --- Mise à jour de l'application --- */
   const upd = settingsSection('⬆️ Application', 'Vérifie les nouvelles versions sur GitHub.');
   const updBtn = settingsBtn('🔄 Vérifier les mises à jour');
@@ -2070,6 +2120,21 @@ function resumeProgress(key) {
   // saveResume n'enregistre déjà que t >= 15 s (début significatif) et efface
   // la quasi-fin → on montre la barre dès qu'une position existe.
   return (p > 0 && p < 0.99) ? p : 0;
+}
+// Temps restant (secondes) d'après la position sauvegardée, 0 si rien.
+function resumeRemaining(key) {
+  const r = getResume(key);
+  if (!r || !r.d) return 0;
+  const rem = r.d - r.t;
+  return rem > 0 ? rem : 0;
+}
+// Format compact du temps restant : « ⏳ 1 h 05 » / « ⏳ 12 min ».
+function fmtRemaining(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  if (h > 0) return `⏳ ${h} h ${String(m).padStart(2, '0')}`;
+  return `⏳ ${m} min`;
 }
 // Clé de reprise d'un élément "récent" (film / épisode de série). Null pour le live.
 function recentResumeKey(r) {
