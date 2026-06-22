@@ -538,6 +538,7 @@ async function openSeries(s) {
   $('seriesPlot').textContent = 'Chargement…';
   $('seasonSelect').innerHTML = '';
   $('episodeList').innerHTML = '';
+  { const st = $('seriesTrailer'); if (st) { st.classList.add('hidden'); st.onclick = null; } }
   const cover = $('seriesCover');
   cover.innerHTML = (s.cover || s.stream_icon) ? `<img src="${escapeHtml(s.cover || s.stream_icon)}">` : '🎞️';
   $('seriesModal').classList.remove('hidden');

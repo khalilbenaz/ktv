@@ -577,6 +577,7 @@ async function ktvOpenMovie(m) {
   const wl = $('movieWatchlist');
   wl.classList.toggle('hidden', !ktvTraktConnected());
   wl.onclick = () => ktvTraktWatchlist({ type: 'movie', title: m.name, year: yearOf(m.name), tmdbId: m._tmdbId });
+  const tr = $('movieTrailer'); if (tr) { tr.classList.add('hidden'); tr.onclick = null; }
 
   if (!ktvSetting('tmdbEnabled')) { $('moviePlot').textContent = m.plot || m.description || 'Aucune description.'; return; }
   try {
@@ -598,6 +599,10 @@ async function ktvOpenMovie(m) {
     if (info.vote_average > 0) bits.push('★ ' + Number(info.vote_average).toFixed(1));
     $('movieMeta').textContent = bits.join('  ·  ');
     ktvRenderCast($('movieCast'), info.credits && info.credits.cast);
+    if (tr && typeof ktvTrailerKey === 'function' && typeof ktvPlayTrailer === 'function') {
+      const yts = await ktvTrailerKey('movie', hit.id);
+      if (ktvCurMovie === m && yts && yts.length) { tr.onclick = () => ktvPlayTrailer(yts); tr.classList.remove('hidden'); }
+    }
   } catch { $('moviePlot').textContent = m.plot || 'Aucune information.'; }
 }
 
@@ -620,6 +625,11 @@ async function ktvEnrichSeriesModal(s, info) {
     if (hit.poster_path) { const cov = $('seriesCover'); if (cov && !cov.querySelector('img')) cov.innerHTML = `<img src="${TMDB_IMG}w342${hit.poster_path}">`; }
     const det = await ktvTmdbDetails('tv', hit.id);
     if (det && det.credits) ktvRenderCast($('seriesCast'), det.credits.cast);
+    const st = $('seriesTrailer');
+    if (st && typeof ktvTrailerKey === 'function' && typeof ktvPlayTrailer === 'function') {
+      const yts = await ktvTrailerKey('tv', hit.id);
+      if (yts && yts.length) { st.onclick = () => ktvPlayTrailer(yts); st.classList.remove('hidden'); }
+    }
   } catch {}
 }
 
