@@ -2092,6 +2092,37 @@ async function buildSettings() {
 
   /* --- Accueil (catégories) --- */
   renderHomeCatPicker();
+
+  ktvSettingsTabs();
+}
+
+// Transforme la longue liste de réglages en onglets (nav à gauche, une section visible).
+function ktvSettingsTabs() {
+  const body = $('settingsBody');
+  const nav = $('settingsNav');
+  if (!body || !nav) return;
+  // Aplatit les sections imbriquées (wrapper .ktv-extra) en enfants directs.
+  body.querySelectorAll('.settings-section.ktv-extra').forEach((host) => {
+    while (host.firstChild) body.insertBefore(host.firstChild, host);
+    host.remove();
+  });
+  const sections = [...body.children].filter((el) => el.classList.contains('settings-section') && el.querySelector(':scope > h3'));
+  nav.innerHTML = '';
+  if (sections.length < 2) { sections.forEach((s) => { s.style.display = ''; }); return; }
+  const show = (i) => {
+    sections.forEach((s, j) => { s.style.display = j === i ? '' : 'none'; });
+    [...nav.children].forEach((n, j) => n.classList.toggle('active', j === i));
+    body.scrollTop = 0; const v = document.getElementById('view-settings'); if (v) v.scrollTop = 0;
+  };
+  sections.forEach((sec, i) => {
+    const h = sec.querySelector(':scope > h3');
+    const b = document.createElement('button');
+    b.className = 'settings-tab';
+    b.textContent = h ? h.textContent : ('Section ' + (i + 1));
+    b.onclick = () => show(i);
+    nav.appendChild(b);
+  });
+  show(0);
 }
 
 // Sélecteur des catégories affichées sur l'accueil (Live / Films / Séries)

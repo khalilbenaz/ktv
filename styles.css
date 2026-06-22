@@ -134,6 +134,15 @@ input, button, select { font-family: inherit; font-size: 14px; outline: none; }
 /* Sélecteur de catégories d'accueil (Réglages) */
 .settings-section { margin-top: 26px; border-top: 1px solid var(--line); padding-top: 18px; }
 .settings-section h3 { font-size: 15px; margin-bottom: 8px; }
+/* Réglages en onglets */
+#view-settings .view-panel { max-width: 1020px; }
+.settings-layout { display: flex; gap: 26px; align-items: flex-start; }
+.settings-nav { flex: 0 0 232px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; }
+.settings-tab { text-align: left; background: transparent; border: 1px solid transparent; color: var(--txt); padding: 11px 14px; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.settings-tab:hover { background: var(--panel2); }
+.settings-tab.active { background: linear-gradient(135deg, var(--accent2), var(--accent)); color: #fff; border-color: transparent; }
+.settings-body { flex: 1; min-width: 0; }
+.settings-body > .settings-section { margin-top: 0; border-top: 0; padding-top: 0; }
 .cat-group { margin-top: 14px; }
 .cat-group-h { font-size: 13px; font-weight: 700; color: var(--accent2); margin-bottom: 8px; }
 .cat-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 16px; }
