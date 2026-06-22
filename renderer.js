@@ -846,11 +846,10 @@ async function buildGuideGrid() {
   const rows = chans.map((c) => {
     const row = document.createElement('div');
     row.className = 'g-row';
-    const hasArch = typeof chHasArchive === 'function' && chHasArchive(c);
     row.innerHTML =
       `<div class="g-ch"><div class="g-logo">${c.stream_icon ? `<img src="${escapeHtml(c.stream_icon)}">` : escapeHtml(initials(c.name))}</div>` +
       `<span class="g-name">${escapeHtml(c.name || ('Chaîne ' + c.stream_id))}</span>` +
-      (hasArch ? `<button class="g-catchup" title="Rediffusions (catch-up)">⏪</button>` : '') +
+      `<button class="g-catchup" title="Rediffusions (catch-up)">⏪</button>` +
       `</div>` +
       `<div class="g-progs"><span class="muted">…</span></div>`;
     const im = row.querySelector('img');

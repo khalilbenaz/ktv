@@ -241,7 +241,8 @@ async function ktvChannelEpgFull(ch) {
 }
 function ktvUpdateCatchupBtn(ch) {
   const b = $('catchupBtn'); if (!b) return;
-  b.classList.toggle('hidden', !chHasArchive(ch));
+  // Toujours proposé pour le live (la modale indique « aucune rediffusion » si vide).
+  b.classList.toggle('hidden', !(ch && !ch._url));
 }
 async function ktvOpenCatchup(channel) {
   const ch = channel || state.current; if (!ch) return;
