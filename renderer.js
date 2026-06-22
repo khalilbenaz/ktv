@@ -460,10 +460,81 @@ function fillContentCat(sel, cats, total) {
   }
 }
 
+// Hero « à la une » (backdrop TMDB) en tête des vues Films / Séries.
+function buildVodHero(m, kind) {
+  const IMG = 'https://image.tmdb.org/t/p/';
+  const isSeries = kind === 'series';
+  const hero = document.createElement('div'); hero.className = 'hero';
+  const art = document.createElement('div'); art.className = 'hero-art';
+  const poster = m.stream_icon || m.cover; if (poster) art.style.backgroundImage = `url(${poster})`;
+  const grad = document.createElement('div'); grad.className = 'hero-grad';
+  const info = document.createElement('div'); info.className = 'hero-info';
+  const tag = document.createElement('div'); tag.className = 'hero-tag'; tag.textContent = isSeries ? 'SÉRIE À LA UNE' : 'FILM À LA UNE';
+  const h1 = document.createElement('h1'); h1.textContent = m.name || '—';
+  const meta = document.createElement('div'); meta.className = 'hero-meta';
+  if (m.rating && Number(m.rating) > 0) meta.textContent = '★ ' + Number(m.rating).toFixed(1);
+  const plot = document.createElement('p'); plot.className = 'hero-plot';
+  const btns = document.createElement('div'); btns.className = 'hero-btns';
+  const playBtn = document.createElement('button'); playBtn.className = 'btn play'; playBtn.textContent = isSeries ? '▶ Voir la série' : '▶ Regarder';
+  playBtn.onclick = () => { if (isSeries) openSeries(m); else (typeof ktvOpenMovie === 'function' ? ktvOpenMovie(m) : playMovie(m)); };
+  btns.appendChild(playBtn);
+  info.append(tag, h1, meta, plot, btns);
+  hero.append(art, grad, info);
+  const tmdbOn = (typeof ktvSetting === 'function') && ktvSetting('tmdbEnabled') && ktvSetting('tmdbKey');
+  if (tmdbOn && typeof ktvTmdbSearch === 'function') {
+    (async () => {
+      try {
+        const type = isSeries ? 'tv' : 'movie';
+        const yr = (!isSeries && typeof yearOf === 'function') ? yearOf(m.name) : undefined;
+        const hit = await ktvTmdbSearch(type, m.name, yr);
+        if (!hit) return;
+        if (hit.backdrop_path) art.style.backgroundImage = `url(${IMG}w1280${hit.backdrop_path})`;
+        if (hit.overview) plot.textContent = hit.overview;
+        const mb = []; const y = (hit.release_date || hit.first_air_date || '').slice(0, 4); if (y) mb.push(y);
+        if (hit.vote_average > 0) mb.push('★ ' + Number(hit.vote_average).toFixed(1));
+        if (mb.length) meta.textContent = mb.join('  ·  ');
+      } catch {}
+    })();
+  }
+  return hero;
+}
+
+// Hero + rail « Tendances » (numéroté, par note) en tête de Films / Séries.
+function renderVodShowcase(kind, show) {
+  const isSeries = kind === 'series';
+  const heroSlot = document.getElementById(isSeries ? 'seriesHero' : 'moviesHero');
+  const railSlot = document.getElementById(isSeries ? 'seriesTrending' : 'moviesTrending');
+  if (heroSlot) heroSlot.innerHTML = '';
+  if (railSlot) railSlot.innerHTML = '';
+  if (!show) return;
+  const all = (isSeries ? state.series : state.vod) || [];
+  if (!all.length) return;
+  const rated = all.filter((x) => Number(x.rating) > 0).sort((a, b) => Number(b.rating) - Number(a.rating));
+  const featured = rated[0] || all[0];
+  if (heroSlot && featured) heroSlot.appendChild(buildVodHero(featured, kind));
+  const trend = rated.slice(0, 16);
+  if (railSlot && trend.length) {
+    const cards = trend.map((m, i) => {
+      const card = posterCard({
+        title: m.name, cover: m.stream_icon || m.cover, rating: m.rating,
+        progress: isSeries ? 0 : resumeProgress('movie:' + m.stream_id),
+        remaining: isSeries ? 0 : resumeRemaining('movie:' + m.stream_id),
+        onClick: () => (isSeries ? openSeries(m) : (typeof ktvOpenMovie === 'function' ? ktvOpenMovie(m) : playMovie(m))),
+        tmdb: isSeries ? { type: 'tv', title: m.name } : { type: 'movie', title: m.name, year: (typeof yearOf === 'function' ? yearOf(m.name) : '') },
+      });
+      const img = card.querySelector('.p-img');
+      if (img) { const rk = document.createElement('span'); rk.className = 'rank-badge'; rk.textContent = String(i + 1); img.appendChild(rk); }
+      return card;
+    });
+    railSlot.appendChild(makeRow('Tendances', cards));
+  }
+}
+
 function renderMovies() {
   const grid = $('movieGrid');
   const cat = $('vodCat').value;
   const q = $('search').value.trim().toLowerCase();
+  renderVodShowcase('movie', !cat && !q);
   let items = state.vod || [];
   if (cat) items = items.filter((m) => m.category_id == cat);
   if (q) items = items.filter((m) => (m.name || '').toLowerCase().includes(q));
@@ -515,6 +586,7 @@ function renderSeries() {
   const grid = $('seriesGrid');
   const cat = $('seriesCat').value;
   const q = $('search').value.trim().toLowerCase();
+  renderVodShowcase('series', !cat && !q);
   let items = state.series || [];
   if (cat) items = items.filter((s) => s.category_id == cat);
   if (q) items = items.filter((s) => (s.name || '').toLowerCase().includes(q));
