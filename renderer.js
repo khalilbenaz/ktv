@@ -531,6 +531,8 @@ function renderVodShowcase(kind, show) {
   const recent = all.slice().sort((a, b) => (Number(isSeries ? b.last_modified : b.added) || 0) - (Number(isSeries ? a.last_modified : a.added) || 0)).slice(0, 18);
   const uhd = all.filter((x) => { const qy = detectQuality(x.name); return qy === '4K' || qy === '8K'; }).slice(0, 18);
   const fhd = all.filter((x) => detectQuality(x.name) === 'FHD').slice(0, 18);
+  const yrOf = (x) => Number((x.releaseDate ? String(x.releaseDate).slice(0, 4) : '') || (typeof yearOf === 'function' ? yearOf(x.name) : '') || 0);
+  const released = all.map((x) => ({ x, y: yrOf(x) })).filter((o) => o.y > 1950).sort((a, b) => b.y - a.y).map((o) => o.x).slice(0, 18);
 
   const addRail = (title, items, numbered) => {
     if (!items || !items.length) return;
@@ -538,6 +540,7 @@ function renderVodShowcase(kind, show) {
     railSlot.appendChild(makeRow(title, cards));
   };
   addRail('Tendances', rated.slice(0, 16), true);
+  addRail('Dernières sorties', released, false);
   addRail(isSeries ? 'Récemment mises à jour' : 'Récemment ajoutés', recent, false);
   addRail('4K • UHD', uhd, false);
   if (!uhd.length) addRail('Full HD', fhd, false);
