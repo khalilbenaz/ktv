@@ -938,69 +938,41 @@ function recentCard(r) {
   return card;
 }
 
-// Charge l'API IFrame YouTube une seule fois (permet de détecter les erreurs d'intégration).
-let _ytApiPromise = null;
-function ensureYTApi() {
-  if (window.YT && window.YT.Player) return Promise.resolve();
-  if (_ytApiPromise) return _ytApiPromise;
-  _ytApiPromise = new Promise((resolve) => {
-    const prev = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => { try { if (typeof prev === 'function') prev(); } catch {} resolve(); };
-    const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api';
-    document.head.appendChild(s);
-  });
-  return _ytApiPromise;
-}
-
-// Lecture d'une bande-annonce dans un overlay intégré. Reçoit une liste de clés YouTube
-// candidates : si une vidéo refuse l'intégration, on passe automatiquement à la suivante.
-let _ytPlayer = null;
+// Lecture d'une bande-annonce dans un overlay intégré, via <webview> : la page /embed
+// est chargée comme document principal (pas une iframe sur un domaine tiers), ce qui
+// contourne le blocage d'intégration de YouTube (« Erreur 150/152 »).
 function ktvPlayTrailer(keys) {
   const list = (Array.isArray(keys) ? keys : [keys]).filter(Boolean);
   if (!list.length) return;
+  const k = list[0];
   let ov = document.getElementById('trailerOverlay');
   if (!ov) {
     ov = document.createElement('div');
     ov.id = 'trailerOverlay';
     ov.className = 'trailer-overlay hidden';
-    ov.innerHTML = '<div class="trailer-box"><button class="trailer-x" title="Fermer (Échap)">✕</button><div class="trailer-frame"><div id="ytMount"></div></div><div class="trailer-fallback hidden"></div></div>';
+    ov.innerHTML = '<div class="trailer-box"><button class="trailer-x" title="Fermer (Échap)">✕</button><div class="trailer-frame"></div><a class="trailer-yt" target="_blank" rel="noreferrer">Ouvrir sur YouTube ↗</a></div>';
     document.body.appendChild(ov);
-    ov._close = () => {
-      ov.classList.add('hidden');
-      try { if (_ytPlayer && _ytPlayer.stopVideo) _ytPlayer.stopVideo(); } catch {}
-      try { if (_ytPlayer && _ytPlayer.destroy) _ytPlayer.destroy(); } catch {}
-      _ytPlayer = null;
-      const m = ov.querySelector('.trailer-frame'); if (m) m.innerHTML = '<div id="ytMount"></div>';
-    };
+    ov._close = () => { ov.classList.add('hidden'); const f = ov.querySelector('.trailer-frame'); if (f) f.innerHTML = ''; };
     ov.querySelector('.trailer-x').onclick = ov._close;
     ov.onclick = (e) => { if (e.target === ov) ov._close(); };
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !ov.classList.contains('hidden')) ov._close(); });
   }
-  const fb = ov.querySelector('.trailer-fallback');
-  fb.classList.add('hidden'); fb.innerHTML = '';
-  ov.querySelector('.trailer-frame').innerHTML = '<div id="ytMount"></div>';
+  ov.querySelector('.trailer-yt').href = 'https://www.youtube.com/watch?v=' + k;
+  const frame = ov.querySelector('.trailer-frame');
+  frame.innerHTML = '';
+  const src = `https://www.youtube-nocookie.com/embed/${k}?autoplay=1&rel=0&modestbranding=1&playsinline=1`;
+  if ('customElements' in window || document.createElement('webview').constructor !== HTMLUnknownElement) {
+    const wv = document.createElement('webview');
+    wv.setAttribute('src', src);
+    wv.setAttribute('allowpopups', 'false');
+    wv.style.width = '100%'; wv.style.height = '100%'; wv.style.border = '0';
+    frame.appendChild(wv);
+  } else {
+    const ifr = document.createElement('iframe');
+    ifr.src = src; ifr.allow = 'autoplay; encrypted-media; fullscreen'; ifr.allowFullscreen = true; ifr.setAttribute('frameborder', '0');
+    frame.appendChild(ifr);
+  }
   ov.classList.remove('hidden');
-
-  ensureYTApi().then(() => {
-    let idx = 0;
-    const showFallback = (k) => {
-      fb.innerHTML = `Cette bande-annonce refuse l'intégration. <a href="https://www.youtube.com/watch?v=${k}" target="_blank" rel="noreferrer">Ouvrir sur YouTube ↗</a>`;
-      fb.classList.remove('hidden');
-    };
-    const tryNext = () => {
-      if (idx >= list.length) { showFallback(list[list.length - 1]); return; }
-      const k = list[idx++];
-      try { if (_ytPlayer && _ytPlayer.destroy) _ytPlayer.destroy(); } catch {}
-      ov.querySelector('.trailer-frame').innerHTML = '<div id="ytMount"></div>';
-      _ytPlayer = new window.YT.Player('ytMount', {
-        host: 'https://www.youtube-nocookie.com',
-        videoId: k,
-        playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1 },
-        events: { onError: () => tryNext() },
-      });
-    };
-    tryNext();
-  });
 }
 
 function buildHero(item) {
