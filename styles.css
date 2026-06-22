@@ -188,7 +188,8 @@ input, button, select { font-family: inherit; font-size: 14px; outline: none; }
 .trailer-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.86); display: grid; place-items: center; padding: 32px; }
 .trailer-overlay.hidden { display: none; }
 .trailer-box { position: relative; width: min(1100px, 92vw); aspect-ratio: 16/9; max-height: 86vh; background: #000; border-radius: 12px; overflow: hidden; box-shadow: 0 24px 80px rgba(0,0,0,.7); }
-.trailer-frame, .trailer-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.trailer-frame { position: absolute; inset: 0; }
+.trailer-frame > div, .trailer-frame iframe { position: absolute; inset: 0; width: 100% !important; height: 100% !important; border: 0; }
 .trailer-x { position: absolute; top: -14px; right: -14px; z-index: 2; width: 38px; height: 38px; border-radius: 50%; border: 0; background: #fff; color: #111; font-size: 18px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.5); }
 .trailer-x:hover { background: var(--accent); color: #fff; }
 .trailer-yt { position: absolute; right: 0; bottom: -28px; font-size: 12px; color: rgba(255,255,255,.65); text-decoration: none; }
