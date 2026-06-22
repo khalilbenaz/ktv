@@ -961,23 +961,32 @@ function ktvPlayTrailer(keys) {
   const frame = ov.querySelector('.trailer-frame');
   frame.innerHTML = '';
   // Page watch (et non /embed) : YouTube y lit aussi les vidéos « intégration interdite ».
+  // On sort le lecteur en position:fixed pour qu'il remplisse le webview de façon robuste
+  // (pas de dépendance à la mise en page YouTube → pas d'écran blanc), et on garde le
+  // webview masqué tant que la vidéo n'est pas prête (pas de flash de la page YouTube).
+  const css = [
+    'ytd-app,ytd-watch-flexy,#content,#page-manager,html,body{background:#000!important;margin:0!important;overflow:hidden!important}',
+    '#masthead-container,ytd-masthead,#secondary,#below,#comments,ytd-watch-metadata,ytd-merch-shelf-renderer,tp-yt-app-drawer,#chat,ytd-watch-flexy #related{display:none!important}',
+    '#movie_player,.html5-video-player{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;background:#000!important}',
+    'video.html5-main-video{width:100%!important;height:100%!important;object-fit:contain!important}',
+  ].join('');
   const wv = document.createElement('webview');
   wv.setAttribute('partition', 'persist:youtube');
   wv.setAttribute('allowpopups', 'false');
   wv.setAttribute('src', `https://www.youtube.com/watch?v=${k}`);
   wv.style.width = '100%'; wv.style.height = '100%'; wv.style.border = '0';
-  // Au chargement : on masque le chrome YouTube et on étire le lecteur pour remplir le
-  // webview (sans déclencher le plein écran OS — la vidéo reste dans l'overlay).
+  wv.style.opacity = '0'; wv.style.transition = 'opacity .25s';
   wv.addEventListener('dom-ready', () => {
-    try {
-      wv.insertCSS([
-        '#masthead-container,#secondary,#below,#comments,ytd-merch-shelf-renderer,tp-yt-app-drawer,#chat,ytd-watch-metadata,ytd-watch-flexy #related{display:none!important}',
-        'html,body{overflow:hidden!important;background:#000!important;margin:0!important}',
-        '#page-manager,ytd-watch-flexy #columns,ytd-watch-flexy #primary,#primary-inner{margin:0!important;padding:0!important;max-width:100vw!important;width:100vw!important}',
-        '#player,#player-container,#player-container-outer,#player-container-inner,#movie_player,.html5-video-player{width:100vw!important;max-width:100vw!important;height:100vh!important;left:0!important;margin:0!important}',
-        'video.html5-main-video{width:100%!important;height:100%!important;object-fit:contain!important}',
-      ].join(''));
-    } catch {}
+    try { wv.insertCSS(css); } catch {}
+    let n = 0;
+    const reveal = () => { try { wv.insertCSS(css); } catch {} wv.style.opacity = '1'; };
+    const t = setInterval(() => {
+      n++;
+      wv.executeJavaScript("!!document.querySelector('video.html5-main-video')").then((ok) => {
+        if (ok) { reveal(); clearInterval(t); }
+        else if (n > 20) { reveal(); clearInterval(t); }
+      }).catch(() => { if (n > 20) { reveal(); clearInterval(t); } });
+    }, 250);
   });
   frame.appendChild(wv);
   ov.classList.remove('hidden');
