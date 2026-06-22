@@ -479,6 +479,37 @@ async function ktvTmdbDetails(type, id) {
   return v;
 }
 
+// Clé YouTube de la bande-annonce (TMDB /videos). FR d'abord, fallback EN puis sans langue.
+async function ktvTrailerKey(type, id) {
+  const tkey = ktvSetting('tmdbKey');
+  if (!ktvSetting('tmdbEnabled') || !tkey) return null;
+  const ck = 'yt|' + type + '|' + id;
+  const c = ktvTmdbCacheGet(ck); if (c !== undefined) return c;
+  const path = 'https://api.themoviedb.org/3/' + (type === 'tv' ? 'tv' : 'movie') + '/' + id + '/videos';
+  const pickFrom = (list) => {
+    const v = (list || []).filter((x) => x.site === 'YouTube');
+    return (v.find((x) => x.type === 'Trailer' && x.official)
+      || v.find((x) => x.type === 'Trailer')
+      || v.find((x) => x.type === 'Teaser')
+      || v[0] || null);
+  };
+  const fetchVids = async (lang) => {
+    try {
+      const r = await fetch(path + (lang ? ('?language=' + lang) : ''), { headers: { Authorization: 'Bearer ' + tkey, accept: 'application/json' } });
+      if (!r.ok) return [];
+      const d = await r.json(); return (d && d.results) || [];
+    } catch { return []; }
+  };
+  let key = null;
+  const lang = ktvSetting('tmdbLang') || 'fr-FR';
+  let pick = pickFrom(await fetchVids(lang));
+  if (!pick) pick = pickFrom(await fetchVids('en-US'));
+  if (!pick) pick = pickFrom(await fetchVids(null));
+  key = pick ? pick.key : null;
+  ktvTmdbCacheSet(ck, key);
+  return key;
+}
+
 let ktvTmdbObs = null;
 function ktvTmdbObserver() {
   if (!ktvTmdbObs && 'IntersectionObserver' in window) {

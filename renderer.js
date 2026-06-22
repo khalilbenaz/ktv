@@ -924,6 +924,12 @@ function recentCard(r) {
   t.className = 'rc-title';
   t.textContent = (r.type === 'series' && r.show) ? r.show : (r.name || '—');
   card.appendChild(th); card.appendChild(t);
+  // Sous-titre « Continue - S01, E02 » (séries) ou « Reprendre » (films en cours)
+  let subTxt = '';
+  if (se) subTxt = `Continuer · S${String(se.s).padStart(2, '0')}, E${String(se.e).padStart(2, '0')}`;
+  else if (r.type === 'movie' && prog > 0) subTxt = 'Continuer le film';
+  else if (r.type === 'live') subTxt = 'En direct';
+  if (subTxt) { const sub = document.createElement('div'); sub.className = 'rc-sub'; sub.textContent = subTxt; card.appendChild(sub); }
   card.onclick = () => {
     if (r.type === 'live') play({ stream_id: r.id, name: r.name, stream_icon: r.icon, category_id: r.cat });
     else playMedia(r.type === 'movie' ? vodUrl(r.id, r.ext) : seriesUrl(r.id, r.ext), r.name, false, r.type === 'movie' ? '🎬 Films' : '🎞️ Séries', key);
@@ -932,18 +938,81 @@ function recentCard(r) {
 }
 
 function buildHero(item) {
+  const IMG = 'https://image.tmdb.org/t/p/';
   const hero = document.createElement('div');
   hero.className = 'hero';
   const live = item.type === 'live';
-  hero.innerHTML =
-    `<div class="hero-art"></div><div class="hero-grad"></div>` +
-    `<div class="hero-info"><div class="hero-tag">${live ? '● Reprendre en direct' : '● Reprendre'}</div>` +
-    `<h1>${escapeHtml(item.name || '—')}</h1>` +
-    `<button class="btn play">▶ Regarder</button></div>`;
-  hero.querySelector('.btn.play').onclick = () => {
+  const isSeries = item.type === 'series';
+  const key = recentResumeKey(item);
+  const prog = key ? resumeProgress(key) : 0;
+  const remain = key ? resumeRemaining(key) : 0;
+
+  const art = document.createElement('div'); art.className = 'hero-art';
+  if (item.icon) art.style.backgroundImage = `url(${item.icon})`;
+  const grad = document.createElement('div'); grad.className = 'hero-grad';
+  const info = document.createElement('div'); info.className = 'hero-info';
+
+  const tag = document.createElement('div'); tag.className = 'hero-tag';
+  tag.textContent = live ? '● EN DIRECT' : (item.type === 'movie' ? 'FILM' : 'SÉRIE');
+  const h1 = document.createElement('h1');
+  h1.textContent = (isSeries && item.show) ? item.show : (item.name || '—');
+  info.append(tag, h1);
+
+  // Saison / épisode (séries)
+  let se = null;
+  if (isSeries) {
+    if (item.season != null && item.episode != null) se = { s: item.season, e: item.episode };
+    else { const m = /S(\d+)\s*E(\d+)/i.exec(item.name || ''); if (m) se = { s: Number(m[1]), e: Number(m[2]) }; }
+  }
+  if (se) { const sub = document.createElement('div'); sub.className = 'hero-se'; sub.textContent = `S${String(se.s).padStart(2, '0')}, E${String(se.e).padStart(2, '0')}`; info.appendChild(sub); }
+
+  // Barre de progression + temps restant
+  if (!live && (prog > 0 || remain > 60)) {
+    const wrap = document.createElement('div'); wrap.className = 'hero-prog-wrap';
+    wrap.appendChild(progressBar('hero-prog', prog > 0 ? prog : 0.02));
+    if (remain > 60) { const rl = document.createElement('span'); rl.className = 'hero-remain'; rl.textContent = fmtRemaining(remain).replace('⏳ ', '') + ' restant'; wrap.appendChild(rl); }
+    info.appendChild(wrap);
+  }
+
+  const plot = document.createElement('p'); plot.className = 'hero-plot';
+  info.appendChild(plot);
+
+  const btns = document.createElement('div'); btns.className = 'hero-btns';
+  const playBtn = document.createElement('button'); playBtn.className = 'btn play';
+  playBtn.textContent = (!live && prog > 0) ? '▶ Reprendre' : '▶ Regarder';
+  playBtn.onclick = () => {
     if (live) play({ stream_id: item.id, name: item.name, stream_icon: item.icon, category_id: item.cat });
-    else playMedia(item.type === 'movie' ? vodUrl(item.id, item.ext) : seriesUrl(item.id, item.ext), item.name, false, item.type === 'movie' ? '🎬 Films' : '🎞️ Séries', recentResumeKey(item));
+    else playMedia(item.type === 'movie' ? vodUrl(item.id, item.ext) : seriesUrl(item.id, item.ext), item.name, false, item.type === 'movie' ? '🎬 Films' : '🎞️ Séries', key);
   };
+  btns.appendChild(playBtn);
+  info.appendChild(btns);
+
+  hero.append(art, grad, info);
+
+  // Enrichissement TMDB (backdrop plein cadre + synopsis + bande-annonce)
+  const tmdbOn = (typeof ktvSetting === 'function') && ktvSetting('tmdbEnabled') && ktvSetting('tmdbKey');
+  if (!live && tmdbOn && typeof ktvTmdbSearch === 'function') {
+    (async () => {
+      try {
+        const type = isSeries ? 'tv' : 'movie';
+        const title = (isSeries && item.show) ? item.show : (item.name || '').replace(/\s*·\s*S\d+E\d+.*$/i, '');
+        const yr = (!isSeries && typeof yearOf === 'function') ? yearOf(item.name) : undefined;
+        const hit = await ktvTmdbSearch(type, title, yr);
+        if (!hit) return;
+        if (hit.backdrop_path) art.style.backgroundImage = `url(${IMG}w1280${hit.backdrop_path})`;
+        if (hit.overview && !plot.textContent) plot.textContent = hit.overview;
+        // Bande-annonce (clé YouTube via TMDB)
+        if (typeof ktvTrailerKey === 'function') {
+          const yt = await ktvTrailerKey(type, hit.id);
+          if (yt) {
+            const tb = document.createElement('button'); tb.className = 'btn ghost'; tb.textContent = '▶ Bande-annonce';
+            tb.onclick = () => window.open('https://www.youtube.com/watch?v=' + yt, '_blank', 'noreferrer');
+            btns.appendChild(tb);
+          }
+        }
+      } catch {}
+    })();
+  }
   return hero;
 }
 

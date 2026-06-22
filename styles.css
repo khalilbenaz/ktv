@@ -154,7 +154,8 @@ input, button, select { font-family: inherit; font-size: 14px; outline: none; }
 /* Badge saison/épisode (séries) — coin haut-droit */
 .rc-ep { position: absolute; top: 8px; right: 8px; background: linear-gradient(135deg, var(--accent2), var(--accent)); color: #fff; font-size: 11px; font-weight: 800; letter-spacing: .3px; padding: 3px 8px; border-radius: 6px; }
 .rc-badge { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.72); color: var(--accent2); font-size: 10px; font-weight: 800; letter-spacing: .4px; padding: 2px 7px; border-radius: 5px; }
-.rc-title { width: 240px; font-size: 13px; font-weight: 600; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-title { width: 240px; font-size: 14px; font-weight: 700; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-sub { width: 240px; font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Temps restant au-dessus de la barre de progression */
 .rc-left { position: absolute; left: 8px; bottom: 13px; background: rgba(0,0,0,.72); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px; }
 .p-left { position: absolute; left: 6px; bottom: 11px; background: rgba(0,0,0,.72); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; }
@@ -166,14 +167,23 @@ input, button, select { font-family: inherit; font-size: 14px; outline: none; }
 .ep-item.resuming .ep-t { color: var(--accent2); }
 
 /* HERO */
-.hero { position: relative; height: 260px; border-radius: 18px; overflow: hidden; background: linear-gradient(120deg, #2a1206, #3a1a08 40%, #10121a); }
-.hero-art { position: absolute; inset: 0; background:
-  radial-gradient(700px 300px at 78% 30%, rgba(255,106,44,.35), transparent 60%),
-  repeating-linear-gradient(135deg, rgba(255,255,255,.03) 0 14px, transparent 14px 28px); }
-.hero-grad { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(13,14,18,.92) 30%, transparent); }
-.hero-info { position: absolute; left: 32px; bottom: 28px; max-width: 62%; }
-.hero-tag { color: var(--accent2); font-weight: 700; font-size: 12px; letter-spacing: .6px; text-transform: uppercase; }
-.hero-info h1 { font-size: 32px; margin: 6px 0 14px; letter-spacing: -.5px; color: #fff; }
+.hero { position: relative; height: 430px; border-radius: 18px; overflow: hidden; background: #10121a; }
+.hero-art { position: absolute; inset: 0; background-color: #10121a; background-size: cover; background-position: center 18%; background-repeat: no-repeat; transition: background-image .3s; }
+.hero-grad { position: absolute; inset: 0; background:
+  linear-gradient(90deg, rgba(9,10,15,.97) 0%, rgba(9,10,15,.82) 34%, rgba(9,10,15,.15) 70%, transparent 100%),
+  linear-gradient(0deg, rgba(9,10,15,.92) 0%, transparent 42%); }
+.hero-info { position: absolute; left: 40px; bottom: 36px; max-width: 54%; }
+.hero-tag { color: var(--accent2); font-weight: 800; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+.hero-info h1 { font-size: 40px; margin: 8px 0 6px; letter-spacing: -.6px; color: #fff; line-height: 1.05; text-shadow: 0 2px 18px rgba(0,0,0,.55); }
+.hero-se { color: #fff; font-size: 17px; font-weight: 700; margin: 2px 0 12px; }
+.hero-prog-wrap { display: flex; align-items: center; gap: 12px; margin: 6px 0 14px; max-width: 480px; }
+.hero-prog { position: relative; flex: 1; height: 6px; border-radius: 4px; background: rgba(255,255,255,.22); overflow: hidden; }
+.hero-prog > div { height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); box-shadow: 0 0 8px var(--accent); }
+.hero-remain { color: rgba(255,255,255,.72); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.hero-plot { color: rgba(255,255,255,.82); font-size: 14px; line-height: 1.5; margin: 0 0 18px; max-width: 640px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.hero-btns { display: flex; gap: 12px; flex-wrap: wrap; }
+.btn.ghost { background: rgba(255,255,255,.14); color: #fff; backdrop-filter: blur(4px); }
+.btn.ghost:hover { background: rgba(255,255,255,.24); }
 .btn { display: inline-flex; align-items: center; gap: 8px; border: none; border-radius: 10px; padding: 11px 22px; font-weight: 700; font-size: 14px; cursor: pointer; }
 .btn.play { background: linear-gradient(135deg, var(--accent2), var(--accent)); color: #fff; }
 .btn.play:hover { filter: brightness(1.08); }
