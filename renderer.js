@@ -709,26 +709,42 @@ function renderMovies() {
   const catItems = (state.vod || []).filter((m) => !cat || m.category_id == cat);
   let items = q ? catItems.filter((m) => (m.name || '').toLowerCase().includes(q)) : catItems;
   const total = items.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  if (state.vodPage > totalPages) state.vodPage = 1;
-  const page = state.vodPage;
-  $('movieCount').textContent = `${total} film(s)` + (totalPages > 1 ? ` · page ${page}/${totalPages}` : '');
-  grid.innerHTML = '';
-  if (!total) { grid.innerHTML = '<div class="loading">Aucun film.</div>'; renderPager('moviePager', 1, 1); return; }
-  const frag = document.createDocumentFragment();
-  for (const m of items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)) {
-    frag.appendChild(posterCard({
-      title: m.name, cover: m.stream_icon || m.cover, rating: m.rating,
-      progress: resumeProgress('movie:' + m.stream_id), remaining: resumeRemaining('movie:' + m.stream_id),
-      watchedKey: 'movie:' + m.stream_id,
-      onClick: () => (typeof ktvOpenMovie === 'function' ? ktvOpenMovie(m) : playMovie(m)),
-      tmdb: { type: 'movie', title: m.name, year: (typeof yearOf === 'function' ? yearOf(m.name) : '') },
-      onDownload: () => { const ext = m.container_extension || 'mp4'; startDownload(vodUrl(m.stream_id, ext), m.name || 'Film', ext); }
-    }));
-  }
-  grid.appendChild(frag);
-  renderPager('moviePager', page, totalPages, (p) => { state.vodPage = p; renderMovies(); scrollToGridTop(view, $('vodCatChips') || grid); });
+  $('movieCount').textContent = `${total} film(s)`;
+  const pg = $('moviePager'); if (pg) pg.innerHTML = '';
+  if (!total) { grid.innerHTML = '<div class="loading">Aucun film.</div>'; if (gridObs.movie) { gridObs.movie.disconnect(); gridObs.movie = null; } return; }
+  renderGridInfinite('movie', grid, items, (m) => posterCard({
+    title: m.name, cover: m.stream_icon || m.cover, rating: m.rating,
+    progress: resumeProgress('movie:' + m.stream_id), remaining: resumeRemaining('movie:' + m.stream_id),
+    watchedKey: 'movie:' + m.stream_id,
+    onClick: () => (typeof ktvOpenMovie === 'function' ? ktvOpenMovie(m) : playMovie(m)),
+    tmdb: { type: 'movie', title: m.name, year: (typeof yearOf === 'function' ? yearOf(m.name) : '') },
+    onDownload: () => { const ext = m.container_extension || 'mp4'; startDownload(vodUrl(m.stream_id, ext), m.name || 'Film', ext); }
+  }));
   if (view) { const d = grid.getBoundingClientRect().top - gBefore; if (d) view.scrollTop += d; }
+}
+
+// Grille à chargement progressif (défilement infini) : rend par lots de PAGE_SIZE
+// et ajoute le lot suivant quand on approche du bas.
+const gridObs = {};
+function renderGridInfinite(key, grid, items, makeCard) {
+  if (gridObs[key]) { gridObs[key].disconnect(); gridObs[key] = null; }
+  grid.innerHTML = '';
+  const sentinel = document.createElement('div');
+  sentinel.style.cssText = 'grid-column:1/-1;height:1px;';
+  let shown = 0;
+  const more = () => {
+    const frag = document.createDocumentFragment();
+    items.slice(shown, shown + PAGE_SIZE).forEach((it) => frag.appendChild(makeCard(it)));
+    grid.insertBefore(frag, sentinel);
+    shown += PAGE_SIZE;
+    if (shown >= items.length && gridObs[key]) { gridObs[key].disconnect(); gridObs[key] = null; }
+  };
+  grid.appendChild(sentinel);
+  more();
+  if ('IntersectionObserver' in window) {
+    gridObs[key] = new IntersectionObserver((es) => { if (es[0].isIntersecting && shown < items.length) more(); }, { rootMargin: '600px' });
+    gridObs[key].observe(sentinel);
+  }
 }
 
 function playMovie(m) {
@@ -772,22 +788,14 @@ function renderSeries() {
   const catItems = (state.series || []).filter((s) => !cat || s.category_id == cat);
   let items = q ? catItems.filter((s) => (s.name || '').toLowerCase().includes(q)) : catItems;
   const total = items.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  if (state.seriesPage > totalPages) state.seriesPage = 1;
-  const page = state.seriesPage;
-  $('seriesCount').textContent = `${total} série(s)` + (totalPages > 1 ? ` · page ${page}/${totalPages}` : '');
-  grid.innerHTML = '';
-  if (!total) { grid.innerHTML = '<div class="loading">Aucune série.</div>'; renderPager('seriesPager', 1, 1); return; }
-  const frag = document.createDocumentFragment();
-  for (const s of items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)) {
-    frag.appendChild(posterCard({
-      title: s.name, cover: s.cover || s.stream_icon, rating: s.rating,
-      watchedKey: 'serieswatched:' + (s.series_id || s.stream_id),
-      onClick: () => openSeries(s), tmdb: { type: 'tv', title: s.name }
-    }));
-  }
-  grid.appendChild(frag);
-  renderPager('seriesPager', page, totalPages, (p) => { state.seriesPage = p; renderSeries(); scrollToGridTop(view, $('seriesCatChips') || grid); });
+  $('seriesCount').textContent = `${total} série(s)`;
+  const pg = $('seriesPager'); if (pg) pg.innerHTML = '';
+  if (!total) { grid.innerHTML = '<div class="loading">Aucune série.</div>'; if (gridObs.series) { gridObs.series.disconnect(); gridObs.series = null; } return; }
+  renderGridInfinite('series', grid, items, (s) => posterCard({
+    title: s.name, cover: s.cover || s.stream_icon, rating: s.rating,
+    watchedKey: 'serieswatched:' + (s.series_id || s.stream_id),
+    onClick: () => openSeries(s), tmdb: { type: 'tv', title: s.name }
+  }));
   if (view) { const d = grid.getBoundingClientRect().top - gBefore; if (d) view.scrollTop += d; }
 }
 
