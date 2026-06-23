@@ -1418,13 +1418,20 @@ async function getChannelEpg(channel) {
       result = { cur: items.find((p) => p.st <= now && now < (p.en || p.st + 3600)) || null, next: items.find((p) => p.st > now) || null, src: 'xtream' };
     }
   } catch {}
-  if (!result) {
+  // Repli XMLTV si AUCUN résultat, OU si le fournisseur n'a pas de programme EN COURS
+  // (cur=null) : certaines grilles Xtream ont des trous (ex. TF1) alors que le XMLTV
+  // a bien le programme du moment.
+  if (!result || !result.cur) {
     try {
       const r = await window.api.epgLookup(channel.name, channel.epg_channel_id);
-      if (r && (r.cur || r.next)) result = { cur: r.cur, next: r.next, src: 'xmltv' };
+      if (r && (r.cur || r.next)) {
+        if (!result) result = { cur: r.cur, next: r.next, src: 'xmltv' };
+        else { result.cur = result.cur || r.cur; result.next = result.next || r.next; }
+      }
     } catch {}
   }
-  if (result) state.epgCache[channel.stream_id] = result;
+  // On ne met en cache que si on a un programme en cours (sinon on retentera).
+  if (result && result.cur) state.epgCache[channel.stream_id] = result;
   return result;
 }
 
