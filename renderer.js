@@ -578,7 +578,7 @@ function vodShowcaseCard(m, kind, rank) {
     title: m.name, cover: m.stream_icon || m.cover, rating: m.rating,
     progress: isSeries ? 0 : resumeProgress('movie:' + m.stream_id),
     remaining: isSeries ? 0 : resumeRemaining('movie:' + m.stream_id),
-    watchedKey: isSeries ? null : 'movie:' + m.stream_id,
+    watchedKey: isSeries ? 'serieswatched:' + (m.series_id || m.stream_id) : 'movie:' + m.stream_id,
     onClick: () => (isSeries ? openSeries(m) : (typeof ktvOpenMovie === 'function' ? ktvOpenMovie(m) : playMovie(m))),
     tmdb: isSeries ? { type: 'tv', title: m.name } : { type: 'movie', title: m.name, year: (typeof yearOf === 'function' ? yearOf(m.name) : '') },
   });
@@ -782,6 +782,7 @@ function renderSeries() {
   for (const s of items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)) {
     frag.appendChild(posterCard({
       title: s.name, cover: s.cover || s.stream_icon, rating: s.rating,
+      watchedKey: 'serieswatched:' + (s.series_id || s.stream_id),
       onClick: () => openSeries(s), tmdb: { type: 'tv', title: s.name }
     }));
   }
@@ -799,6 +800,18 @@ async function openSeries(s) {
   $('episodeList').innerHTML = '';
   const cover = $('seriesCover');
   cover.innerHTML = (s.cover || s.stream_icon) ? `<img src="${escapeHtml(s.cover || s.stream_icon)}">` : '🎞️';
+  // Marquer la série entière comme vue (+ synchro Trakt show)
+  const swBtn = $('seriesWatched');
+  if (swBtn) {
+    const swKey = 'serieswatched:' + (s.series_id || s.stream_id);
+    const setSw = () => { const on = isWatched(swKey); swBtn.textContent = on ? '✓ Vu' : '☆ Vu'; swBtn.classList.toggle('on', on); };
+    setSw();
+    swBtn.onclick = () => {
+      const nowOn = !isWatched(swKey);
+      toggleWatched(swKey); setSw();
+      if (typeof ktvTraktSetWatched === 'function') ktvTraktSetWatched({ type: 'show', title: s.name, year: (typeof yearOf === 'function' ? yearOf(s.name) : undefined) }, nowOn);
+    };
+  }
   $('seriesModal').classList.remove('hidden');
   try {
     const info = await xtreamApi('action=get_series_info&series_id=' + s.series_id);
@@ -844,9 +857,20 @@ function renderEpisodes(season) {
     const dl = document.createElement('button');
     dl.className = 'ep-dl'; dl.textContent = '⬇'; dl.title = 'Télécharger cet épisode';
     dl.onclick = (ev) => { ev.stopPropagation(); const ext = ep.container_extension || 'mp4'; startDownload(seriesUrl(ep.id, ext), `${curSeries.name} S${season}E${ep.episode_num}`, ext); };
+    // Marquer l'épisode comme vu (+ synchro Trakt)
+    const ew = document.createElement('button');
+    const ewKey = 'series:' + ep.id;
+    const setEw = () => { const on = isWatched(ewKey); ew.textContent = on ? '✓' : '☆'; ew.classList.toggle('on', on); };
+    ew.className = 'ep-watch'; ew.title = 'Marquer comme vu'; setEw();
+    ew.onclick = (ev) => {
+      ev.stopPropagation();
+      const on = !isWatched(ewKey);
+      toggleWatched(ewKey); setEw();
+      if (typeof ktvTraktSetWatched === 'function') ktvTraktSetWatched({ type: 'episode', showTitle: curSeries.name, season: Number(season), episode: Number(ep.episode_num) }, on);
+    };
     const play = document.createElement('span');
     play.className = 'ep-play'; play.textContent = '▶';
-    li.append(n, meta, dl, play);
+    li.append(n, meta, ew, dl, play);
     li.onclick = () => playEpisodeAt({ eps, idx: i, season, name: curSeries.name, cover });
     ul.appendChild(li);
   });
@@ -929,9 +953,10 @@ function posterCard({ title, cover, rating, onClick, onDownload, tmdb, progress,
       ev.stopPropagation();
       const nowOn = !isWatched(watchedKey);
       toggleWatched(watchedKey); setWb(wb);
-      // Synchro Trakt (films) sur la bascule manuelle.
-      if (tmdb && tmdb.type === 'movie' && typeof ktvTraktSetWatched === 'function') {
-        ktvTraktSetWatched({ type: 'movie', title: tmdb.title, year: tmdb.year }, nowOn);
+      // Synchro Trakt sur la bascule manuelle (film ou série entière).
+      if (tmdb && typeof ktvTraktSetWatched === 'function') {
+        if (tmdb.type === 'movie') ktvTraktSetWatched({ type: 'movie', title: tmdb.title, year: tmdb.year }, nowOn);
+        else if (tmdb.type === 'tv') ktvTraktSetWatched({ type: 'show', title: tmdb.title }, nowOn);
       }
     };
     img.appendChild(wb); setWb(wb);
@@ -1220,7 +1245,7 @@ async function fillCategoryRows(cats, rows) {
       } else {
         await loadSeriesData();
         const items = (state.series || []).filter((s) => String(s.category_id) === String(c.id)).slice(0, 20);
-        if (items.length) setRowCards(row, items.map((s) => posterCard({ title: s.name, cover: s.cover || s.stream_icon, rating: s.rating, onClick: () => openSeries(s), tmdb: { type: 'tv', title: s.name } }))); else row.remove();
+        if (items.length) setRowCards(row, items.map((s) => posterCard({ title: s.name, cover: s.cover || s.stream_icon, rating: s.rating, watchedKey: 'serieswatched:' + (s.series_id || s.stream_id), onClick: () => openSeries(s), tmdb: { type: 'tv', title: s.name } }))); else row.remove();
       }
     } catch { row.remove(); }
   }
@@ -1248,7 +1273,7 @@ async function fillHomeContent(moviesRow, seriesRow) {
   try {
     await loadSeriesData();
     const recent = [...(state.series || [])].sort((a, b) => (Number(b.last_modified) || 0) - (Number(a.last_modified) || 0)).slice(0, 18);
-    if (recent.length) setRowCards(seriesRow, recent.map((s) => posterCard({ title: s.name, cover: s.cover || s.stream_icon, rating: s.rating, onClick: () => openSeries(s), tmdb: { type: 'tv', title: s.name } })));
+    if (recent.length) setRowCards(seriesRow, recent.map((s) => posterCard({ title: s.name, cover: s.cover || s.stream_icon, rating: s.rating, watchedKey: 'serieswatched:' + (s.series_id || s.stream_id), onClick: () => openSeries(s), tmdb: { type: 'tv', title: s.name } })));
     else seriesRow.remove();
   } catch { seriesRow.remove(); }
 }

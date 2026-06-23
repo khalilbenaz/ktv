@@ -378,7 +378,7 @@ async function ktvRunSearch(q) {
     onDownload: () => { const ext = m.container_extension || 'mp4'; startDownload(vodUrl(m.stream_id, ext), m.name || 'Film', ext); },
   }))));
   root.appendChild(ktvResultSection('🎞️ Séries', sHit.length, sHit.map((s) => posterCard({
-    title: s.name, cover: s.cover || s.stream_icon, rating: s.rating, onClick: () => openSeries(s), tmdb: { type: 'tv', title: s.name },
+    title: s.name, cover: s.cover || s.stream_icon, rating: s.rating, watchedKey: 'serieswatched:' + (s.series_id || s.stream_id), onClick: () => openSeries(s), tmdb: { type: 'tv', title: s.name },
   }))));
 
   // EPG (asynchrone) — programmes en cours / à venir
@@ -569,6 +569,18 @@ async function ktvOpenMovie(m) {
   const wl = $('movieWatchlist');
   wl.classList.toggle('hidden', !ktvTraktConnected());
   wl.onclick = () => ktvTraktWatchlist({ type: 'movie', title: m.name, year: yearOf(m.name), tmdbId: m._tmdbId });
+  // Marquer comme vu (+ synchro Trakt)
+  const mwBtn = $('movieWatched');
+  if (mwBtn) {
+    const mwKey = 'movie:' + m.stream_id;
+    const setMw = () => { const on = isWatched(mwKey); mwBtn.textContent = on ? '✓ Vu' : '☆ Vu'; mwBtn.classList.toggle('on', on); };
+    setMw();
+    mwBtn.onclick = () => {
+      const nowOn = !isWatched(mwKey);
+      toggleWatched(mwKey); setMw();
+      if (typeof ktvTraktSetWatched === 'function') ktvTraktSetWatched({ type: 'movie', title: m.name, year: yearOf(m.name), tmdbId: m._tmdbId }, nowOn);
+    };
+  }
 
   if (!ktvSetting('tmdbEnabled')) { $('moviePlot').textContent = m.plot || m.description || 'Aucune description.'; return; }
   try {
@@ -743,6 +755,7 @@ async function ktvTraktSetWatched(meta, on) {
     let body;
     if (meta.type === 'movie') body = meta.tmdbId ? { movies: [{ ids: { tmdb: meta.tmdbId } }] } : { movies: [{ title: cleanTitle(meta.title), year: Number(meta.year) || undefined }] };
     else if (meta.type === 'episode') body = { shows: [{ title: cleanTitle(meta.showTitle), seasons: [{ number: meta.season, episodes: [{ number: meta.episode }] }] }] };
+    else if (meta.type === 'show') body = { shows: [{ title: cleanTitle(meta.title), year: Number(meta.year) || undefined }] };  // série entière
     else return;
     await ktvTraktReq(on ? '/sync/history' : '/sync/history/remove', 'POST', body);
     ktvToast(on ? '✓ Marqué vu sur Trakt' : '↩︎ Retiré de l’historique Trakt');
