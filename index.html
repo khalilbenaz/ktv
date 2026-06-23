@@ -36,6 +36,7 @@
       <button class="nav" data-view="movies"><span class="ic">🎬</span> <span class="lbl">Films</span></button>
       <button class="nav" data-view="series"><span class="ic">🎞️</span> <span class="lbl">Séries</span></button>
       <button class="nav" data-view="guide"><span class="ic">🗓️</span> <span class="lbl">Guide TV</span></button>
+      <button class="nav" data-view="history"><span class="ic">🕘</span> <span class="lbl">Historique</span></button>
       <button class="nav" data-view="recordings"><span class="ic">⏺️</span> <span class="lbl">Enregistrements</span></button>
       <div class="spacer"></div>
       <button class="nav" data-view="settings"><span class="ic">⚙️</span> <span class="lbl">Réglages</span></button>
@@ -120,6 +121,16 @@
             <span class="count" id="guideHint"></span>
           </div>
           <div id="guideGrid" class="guide"></div>
+        </section>
+
+        <!-- HISTORIQUE -->
+        <section class="view" id="view-history">
+          <div class="view-panel">
+            <h2 class="view-h">🕘 Historique de visionnage
+              <button id="historyClear" class="ghost" style="float:right;font-size:13px;">🗑️ Vider</button>
+            </h2>
+            <div id="historyGrid" class="chan-grid"></div>
+          </div>
         </section>
 
         <!-- RECORDINGS (écran) -->

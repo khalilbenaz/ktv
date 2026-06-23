@@ -50,7 +50,8 @@ const state = {
   relayLan: '',
   tunnelUrl: '',
   favs: [],         // chaînes favorites {stream_id, name, stream_icon}
-  recent: [],       // vu récemment
+  recent: [],       // vu récemment / historique
+  reminders: [],    // rappels de programme {id, streamId, name, icon, cat, title, startAt}
   // navigation
   view: 'home',     // vue affichée
   browse: 'home',   // dernière vue de navigation (pour le retour depuis le lecteur)
@@ -81,12 +82,56 @@ function loadRecent() {
   try { state.recent = JSON.parse(localStorage.getItem('iptv_recent') || '[]'); }
   catch { state.recent = []; }
 }
-function saveRecent() { try { localStorage.setItem('iptv_recent', JSON.stringify(state.recent.slice(0, 24))); } catch {} }
+function saveRecent() { try { localStorage.setItem('iptv_recent', JSON.stringify(state.recent.slice(0, 100))); } catch {} }
 function pushRecent(item) {
   state.recent = state.recent.filter((r) => !(r.type === item.type && r.id == item.id));
-  state.recent.unshift(item);
-  state.recent = state.recent.slice(0, 24);
+  state.recent.unshift(Object.assign({ at: Date.now() }, item));
+  state.recent = state.recent.slice(0, 100);   // conservé pour l'historique de visionnage
   saveRecent();
+}
+
+/* ---------- Rappels de programme (EPG) ---------- */
+function loadReminders() {
+  try { state.reminders = JSON.parse(localStorage.getItem('iptv_reminders') || '[]'); }
+  catch { state.reminders = []; }
+}
+function saveReminders() { try { localStorage.setItem('iptv_reminders', JSON.stringify(state.reminders)); } catch {} }
+function reminderId(streamId, startAt) { return String(streamId) + '@' + startAt; }
+function isReminded(streamId, startAt) { return state.reminders.some((r) => r.id === reminderId(streamId, startAt)); }
+function toggleReminder(channel, prog) {
+  const id = reminderId(channel.stream_id, prog.st);
+  if (isReminded(channel.stream_id, prog.st)) {
+    state.reminders = state.reminders.filter((r) => r.id !== id);
+  } else {
+    state.reminders.push({ id, streamId: channel.stream_id, name: channel.name, icon: channel.stream_icon || channel.icon || '', cat: channel.category_id, title: prog.title, startAt: prog.st * 1000 });
+    if (typeof ktvToast === 'function') ktvToast('🔔 Rappel ajouté : ' + prog.title);
+  }
+  saveReminders();
+  armReminders();
+}
+const reminderTimers = [];
+function armReminders() {
+  while (reminderTimers.length) clearTimeout(reminderTimers.pop());
+  const now = Date.now();
+  // purge les rappels passés (> 5 min après le début)
+  state.reminders = (state.reminders || []).filter((r) => r.startAt > now - 300000);
+  saveReminders();
+  for (const r of state.reminders) {
+    const delay = r.startAt - now;
+    if (delay <= 0) { fireReminder(r); continue; }
+    if (delay > 25 * 86400000) continue;                 // setTimeout max ~24.8 j
+    reminderTimers.push(setTimeout(() => fireReminder(r), delay));
+  }
+}
+function fireReminder(r) {
+  state.reminders = state.reminders.filter((x) => x.id !== r.id);
+  saveReminders();
+  const open = () => { showView('live'); play({ stream_id: r.streamId, name: r.name, stream_icon: r.icon, category_id: r.cat }); };
+  try {
+    const n = new Notification('🔔 ' + r.title, { body: 'Commence maintenant sur ' + (r.name || 'la chaîne') });
+    n.onclick = () => { try { window.focus(); } catch {} open(); };
+  } catch {}
+  if (typeof ktvToast === 'function') ktvToast('🔔 « ' + r.title +' » commence sur ' + (r.name || ''));
 }
 
 /* ---------- Profils (multi-fournisseurs) ---------- */
@@ -282,6 +327,7 @@ function showView(name) {
   else if (name === 'movies') ensureVod();
   else if (name === 'series') ensureSeries();
   else if (name === 'guide') ensureGuide();
+  else if (name === 'history') buildHistory();
   else if (name === 'recordings') loadRecordings();
   else if (name === 'settings') buildSettings();
 }
@@ -967,6 +1013,15 @@ async function fillGuideRow(c, row) {
     }
     block.title = (archive ? '⏪ Revoir (catch-up)\n\n' : '') + (p.desc || p.title);
     block.onclick = archive ? (() => ktvPlayArchive(c, p)) : (() => play(c));
+    // Programme à venir : bouton « Me rappeler » 🔔
+    if (p.st > now) {
+      const rb = document.createElement('button');
+      rb.className = 'gp-rem' + (isReminded(c.stream_id, p.st) ? ' on' : '');
+      rb.textContent = '🔔';
+      rb.title = 'Me rappeler quand ça commence';
+      rb.onclick = (ev) => { ev.stopPropagation(); toggleReminder(c, p); rb.classList.toggle('on', isReminded(c.stream_id, p.st)); };
+      block.appendChild(rb);
+    }
     slot.appendChild(block);
   }
 }
@@ -986,12 +1041,23 @@ function renderHomeDynamic(dyn) {
   // Hero : reprend le 1er "vu récemment" ou 1er favori
   const heroItem = state.recent[0] || (state.favs[0] && { type: 'live', id: state.favs[0].stream_id, name: state.favs[0].name, icon: state.favs[0].stream_icon });
   if (heroItem) dyn.appendChild(buildHero(heroItem));
-  if (state.recent.length) dyn.appendChild(makeRow('Reprendre la lecture', state.recent.map(recentCard)));
+  if (state.recent.length) dyn.appendChild(makeRow('Reprendre la lecture', state.recent.slice(0, 18).map(recentCard), () => showView('history')));
   if (state.favs.length) dyn.appendChild(makeRow('Chaînes favorites', state.favs.map((f) => channelCard(f, false)), () => {
     showView('live');
     const rail = $('liveFavRail');
     if (rail) rail.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }));
+}
+
+// Vue Historique : tout le « vu récemment » (jusqu'à 100), reprise rapide.
+function buildHistory() {
+  const grid = $('historyGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  if (!state.recent.length) { grid.innerHTML = '<p class="muted">Aucun historique pour le moment.</p>'; return; }
+  const frag = document.createDocumentFragment();
+  state.recent.forEach((r) => frag.appendChild(recentCard(r)));
+  grid.appendChild(frag);
 }
 
 function buildHome() {
@@ -2677,6 +2743,8 @@ function toggleTheme() {
 window.addEventListener('DOMContentLoaded', () => {
   loadFavs();
   loadRecent();
+  loadReminders();
+  armReminders();
   applyTheme(localStorage.getItem('ktv_theme') || 'dark');
   let autoConnect = false;
   try {
@@ -2775,6 +2843,9 @@ window.addEventListener('DOMContentLoaded', () => {
   $('seriesCat').onchange = () => { state.seriesPage = 1; renderSeries(); };
   $('guideCat').onchange = buildGuideGrid;
   $('guideRefresh').onclick = () => { state.epgCache = {}; buildGuideGrid(); };
+  $('historyClear').onclick = () => {
+    if (!state.recent.length || confirm("Vider tout l'historique de visionnage ?")) { state.recent = []; saveRecent(); buildHistory(); }
+  };
 
   // Lecteur
   $('playerBack').onclick = () => showView(state.browse);

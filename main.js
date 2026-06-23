@@ -111,8 +111,8 @@ function createWindow() {
     if (!url.startsWith('file://')) ev.preventDefault();
   });
 
-  // Refuse par défaut toutes les permissions web (caméra, micro, géoloc, notifs…).
-  win.webContents.session.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+  // Refuse les permissions web par défaut, sauf les notifications (rappels de programme).
+  win.webContents.session.setPermissionRequestHandler((_wc, perm, cb) => cb(perm === 'notifications'));
 
   win.loadFile('index.html');
 }

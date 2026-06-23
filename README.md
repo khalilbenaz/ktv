@@ -20,6 +20,10 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** et **Windows (x64)** —
 
 ## Fonctionnalités
 
+### ✨ Nouveautés v1.12.0
+- **Rappels de programme** : bouton **🔔 Me rappeler** sur les programmes à venir du Guide TV → notification système à l'heure de début (clic = ouvre la chaîne). Réactivés automatiquement au lancement.
+- **Historique de visionnage** : nouvel onglet **🕘 Historique** (jusqu'à 100 entrées) avec reprise rapide et bouton *Vider*. La rangée « Reprendre la lecture » propose *tout voir ›*.
+
 ### ✨ Nouveautés v1.11.8
 - **Descriptions des programmes (Guide TV)** : quand le fournisseur ne fournit pas le synopsis, KTV le complète depuis le **XMLTV** (apparié par horaire/titre).
 
