@@ -1057,10 +1057,12 @@ function ktvStartPreview(card) {
     return;
   }
   try {
+    // Même config que le lecteur normal (avec tampon) → aperçu fluide. La config
+    // « faible latence » (latency-chasing, sans stash) faisait saccader l'aperçu.
     const p = mpegts.createPlayer(
       { type: 'mpegts', isLive: true, url: tsUrl },
-      { enableWorker: true, liveBufferLatencyChasing: true, liveSync: true, lazyLoad: false,
-        autoCleanupSourceBuffer: true, enableStashBuffer: false }
+      typeof ktvMpegtsConfig === 'function' ? ktvMpegtsConfig()
+        : { enableWorker: true, lazyLoad: false, autoCleanupSourceBuffer: true, enableStashBuffer: true }
     );
     // Assigner AVANT load/play : sinon un ktvStopPreview concurrent (sortie souris
     // pendant la création) ne verrait pas ce player et le laisserait orphelin (BUG-D).
