@@ -989,7 +989,7 @@ window.initFeatures = initFeatures;
 function ktvRenderLiveFavs() {
   const host = document.getElementById('liveFavRail');
   if (!host) return;
-  const favs = (window.state && Array.isArray(state.favs)) ? state.favs : [];
+  const favs = (typeof state !== 'undefined' && Array.isArray(state.favs)) ? state.favs : [];
   if (!favs.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
   host.style.display = '';
   host.innerHTML = '';
@@ -1012,7 +1012,7 @@ function ktvPreviewEnabled() {
   // est déjà prise — enregistrement, relais/restream, OU une lecture en cours
   // (state.current/state.player). Sinon l'aperçu ouvrirait un 2e flux et couperait
   // la lecture active (BUG-B).
-  if (window.state && (state.recId || state.relaying || state.current || state.player)) return false;
+  if (typeof state !== 'undefined' && (state.recId || state.relaying || state.current || state.player)) return false;
   return !!(window.mpegts && mpegts.isSupported());
 }
 
@@ -1053,7 +1053,7 @@ function ktvStartPreview(card) {
   const tsUrl = (typeof liveTs === 'function') ? liveTs(ch)
     : (typeof streamUrl === 'function' ? streamUrl(ch.stream_id, 'ts') : null);
   if (!tsUrl || ch._url) {                                   // sources M3U directes : pas d'aperçu TS
-    if (ch._url) { try { v.src = ch._url; v.muted = true; v.play().catch(() => {}); ov.classList.remove('loading'); } catch {} }
+    if (ch._url) { try { v.src = ch._url; v.muted = false; v.play().catch(() => {}); ov.classList.remove('loading'); } catch {} }
     return;
   }
   try {
@@ -1066,7 +1066,7 @@ function ktvStartPreview(card) {
     // pendant la création) ne verrait pas ce player et le laisserait orphelin (BUG-D).
     ktvPrevPlayer = p;
     p.attachMediaElement(v);
-    v.muted = true;
+    v.muted = false;                 // aperçu AVEC le son
     p.load();
     p.play().catch(() => {});
     p.on(mpegts.Events.MEDIA_INFO, () => ov.classList.remove('loading'));

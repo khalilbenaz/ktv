@@ -1136,7 +1136,15 @@ function recentCard(r) {
   if (se) subTxt = `Continuer · S${String(se.s).padStart(2, '0')}, E${String(se.e).padStart(2, '0')}`;
   else if (r.type === 'movie' && prog > 0) subTxt = 'Continuer le film';
   else if (r.type === 'live') subTxt = 'En direct';
-  if (subTxt) { const sub = document.createElement('div'); sub.className = 'rc-sub'; sub.textContent = subTxt; card.appendChild(sub); }
+  if (subTxt) {
+    const sub = document.createElement('div'); sub.className = 'rc-sub'; sub.textContent = subTxt; card.appendChild(sub);
+    // Chaînes live : remplace « En direct » par le programme EPG en cours (async).
+    if (r.type === 'live') {
+      getChannelEpg({ stream_id: r.id, name: r.name }).then((e) => {
+        if (e && e.cur && e.cur.title) { sub.textContent = '▶ ' + e.cur.title; sub.title = e.cur.title; }
+      }).catch(() => {});
+    }
+  }
   card.onclick = () => {
     if (r.type === 'live') play({ stream_id: r.id, name: r.name, stream_icon: r.icon, category_id: r.cat });
     else playMedia(r.type === 'movie' ? vodUrl(r.id, r.ext) : seriesUrl(r.id, r.ext), r.name, false, r.type === 'movie' ? '🎬 Films' : '🎞️ Séries', key);
@@ -1343,6 +1351,7 @@ async function play(channel) {
   pushRecent({ type: 'live', id: channel.stream_id, name: channel.name, icon: channel.stream_icon, cat: channel.category_id });
   enterPlayer(channel.name || ('Chaîne ' + channel.stream_id), true);
   $('nowTitle').textContent = channel.name || ('Chaîne ' + channel.stream_id);
+  $('btnFav').classList.remove('hidden'); updateFavBtn();   // favori dispo dans le lecteur (live)
   $('overlay').classList.add('hidden');
   loadEpg(channel);
   $('recBtn').disabled = false;
@@ -1453,6 +1462,7 @@ function watchRecordingLive(channel) {
   pushRecent({ type: 'live', id: channel.stream_id, name: channel.name, icon: channel.stream_icon, cat: channel.category_id });
   enterPlayer(channel.name || ('Chaîne ' + channel.stream_id), true);
   $('nowTitle').textContent = channel.name || ('Chaîne ' + channel.stream_id);
+  $('btnFav').classList.remove('hidden'); updateFavBtn();   // favori dispo dans le lecteur (live)
   $('overlay').classList.add('hidden');
   loadEpg(channel);
   $('recBtn').disabled = false;
@@ -2582,6 +2592,16 @@ function resetPlayerTools() {
   closeTrackMenu(); hideResumeToast();
   $('btnAudio').classList.add('hidden');
   $('btnSubs').classList.add('hidden');
+  $('btnFav').classList.add('hidden');     // réaffiché par play() pour les chaînes live
+}
+
+// Met à jour le bouton favori du lecteur selon la chaîne en cours.
+function updateFavBtn() {
+  const fb = $('btnFav'); if (!fb) return;
+  const on = !!(state.current && isFav(state.current.stream_id));
+  fb.textContent = on ? '★' : '☆';
+  fb.classList.toggle('on', on);
+  fb.title = on ? 'Retirer des favoris' : 'Ajouter aux favoris';
 }
 
 /* ---------- Picture-in-Picture / plein écran ---------- */
@@ -2728,7 +2748,17 @@ window.addEventListener('DOMContentLoaded', () => {
   // Thème clair / sombre
   $('themeToggle').onclick = toggleTheme;
 
-  // Outils du lecteur : audio, sous-titres, PiP, plein écran
+  // Outils du lecteur : favori, audio, sous-titres, PiP, plein écran
+  $('btnFav').onclick = (e) => {
+    e.stopPropagation();
+    if (!state.current) return;
+    toggleFav(state.current);
+    updateFavBtn();
+    if (typeof ktvRenderLiveFavs === 'function') ktvRenderLiveFavs();
+    // reflète l'étoile sur la carte correspondante de la grille live
+    const star = document.querySelector('.chan-card[data-id="' + state.current.stream_id + '"] .fav-btn');
+    if (star) { const on = isFav(state.current.stream_id); star.classList.toggle('on', on); star.textContent = on ? '★' : '☆'; }
+  };
   $('btnAudio').onclick = (e) => { e.stopPropagation(); toggleTrackMenu('audio'); };
   $('btnSubs').onclick = (e) => { e.stopPropagation(); toggleTrackMenu('subs'); };
   $('btnPip').onclick = togglePip;

@@ -765,3 +765,5 @@ input[type="datetime-local"], #schDur {
   animation: cpspin .8s linear infinite; opacity: 0; }
 .chan-preview.loading .cp-spin { opacity: 1; }
 @keyframes cpspin { to { transform: rotate(360deg); } }
+
+#btnFav.on { color: #ffcf3f; }

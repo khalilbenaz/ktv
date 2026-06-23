@@ -177,6 +177,7 @@
             <button id="playerBack" class="icon-btn">‹ Retour</button>
             <span id="playerCrumb" class="crumb">—</span>
             <div class="player-tools">
+              <button id="btnFav" class="icon-btn hidden" title="Ajouter aux favoris">☆</button>
               <button id="btnAudio" class="icon-btn hidden" title="Piste audio (a)">🔊</button>
               <button id="btnSubs" class="icon-btn hidden" title="Sous-titres (c)">💬</button>
               <button id="btnPip" class="icon-btn hidden" title="Picture-in-Picture (p)">🗗</button>
@@ -413,7 +414,7 @@
   </div>
 
   <div id="chanPreview" class="chan-preview" aria-hidden="true">
-    <video muted playsinline></video>
+    <video playsinline></video>
     <div class="cp-spin"></div>
     <div class="cp-title"></div>
   </div>

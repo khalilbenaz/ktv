@@ -12,6 +12,12 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** et **Windows (x64)** —
 
 ## Fonctionnalités
 
+### ✨ Nouveautés v1.11.3
+- **Correctif : rail Favoris vide en Live TV** (les favoris n'apparaissaient que sur l'accueil) — dû à un accès `window.state` invalide.
+- **Aperçu au survol avec le son**.
+- **Bouton favori ☆/★ dans le lecteur** : ajouter/retirer la chaîne en cours des favoris directement depuis la page de lecture.
+- **« Reprendre la lecture »** : les cartes de chaînes affichent désormais le **programme EPG en cours**.
+
 ### ✨ Nouveautés v1.11.2
 - **Correctif lecture Live TV** : sous Electron 42, le worker `blob:` de mpegts.js était bloqué par la politique de sécurité (CSP) → les chaînes live (et l'aperçu) ne démarraient plus. Ajout de `worker-src 'self' blob:`. (Films & séries, en hls.js, n'étaient pas affectés.)
 - **Aperçu au survol sur l'accueil** : disponible aussi dans la rangée « Reprendre la lecture » (chaînes live).
