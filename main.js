@@ -402,6 +402,17 @@ ipcMain.handle('epg-lookup', async (e, { name, tvgId } = {}) => {
   const next = pl.find((p) => p.st > now) || null;
   return { cur, next };
 });
+// Liste des programmes XMLTV (avec description) autour de maintenant — sert à
+// enrichir le Guide quand le get_short_epg du fournisseur ne renvoie pas de desc.
+ipcMain.handle('epg-programs', async (e, { name, tvgId } = {}) => {
+  if (getSettings().xmltvEnabled === false) return [];
+  await Promise.all([ensureXmltv(), ensureWebEpg()]);
+  const pl = resolveEpg(name, tvgId);
+  if (!pl) return [];
+  const now = Date.now() / 1000;
+  return pl.filter((p) => (p.en || p.st + 3600) >= now - 7200).slice(0, 16)
+    .map((p) => ({ title: p.title, desc: p.desc || '', st: p.st, en: p.en }));
+});
 ipcMain.handle('set-provider-epg', (e, { url } = {}) => {
   if (url && url !== providerEpgUrl) {
     providerEpgUrl = url;

@@ -931,6 +931,21 @@ async function fillGuideRow(c, row) {
     if (e && e.cur) progs = [e.cur, e.next].filter(Boolean);
   }
   if (!progs.length) { slot.innerHTML = '<span class="muted">Pas de programme</span>'; return; }
+  // Enrichissement : si le fournisseur ne donne pas de description, on complète
+  // depuis le XMLTV (provider xmltv.php / sources XMLTV) en appariant par horaire.
+  if (progs.some((p) => !p.desc)) {
+    try {
+      const xpl = await window.api.epgPrograms(c.name, c.epg_channel_id);
+      if (xpl && xpl.length) {
+        for (const p of progs) {
+          if (p.desc) continue;
+          const x = xpl.find((q) => Math.abs(q.st - p.st) <= 300)
+            || xpl.find((q) => q.title && p.title && q.title.toLowerCase() === p.title.toLowerCase());
+          if (x && x.desc) p.desc = x.desc;
+        }
+      }
+    } catch {}
+  }
   const now = Date.now() / 1000;
   slot.innerHTML = '';
   const canArch = typeof chHasArchive === 'function' && chHasArchive(c);

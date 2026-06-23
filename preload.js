@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('api', {
   listDownloads: () => ipcRenderer.invoke('list-downloads'),
   downloadsDir: () => ipcRenderer.invoke('downloads-dir'),
   epgLookup: (name, tvgId) => ipcRenderer.invoke('epg-lookup', { name, tvgId }),
+  epgPrograms: (name, tvgId) => ipcRenderer.invoke('epg-programs', { name, tvgId }),
   epgSearch: (q, limit) => ipcRenderer.invoke('epg-search', { q, limit }),
   setProviderEpg: (url) => ipcRenderer.invoke('set-provider-epg', { url }),
   xmltvStatus: () => ipcRenderer.invoke('xmltv-status'),
