@@ -578,7 +578,8 @@ async function ktvOpenMovie(m) {
     m._tmdbId = hit.id;
     wl.onclick = () => ktvTraktWatchlist({ type: 'movie', title: m.name, year: yearOf(m.name), tmdbId: hit.id });
     if (hit.backdrop_path) back.style.backgroundImage = `url(${TMDB_IMG}w780${hit.backdrop_path})`;
-    if (hit.poster_path) cover.innerHTML = `<img src="${TMDB_IMG}w342${hit.poster_path}">`;
+    // On GARDE l'affiche du fournisseur (cohérence avec la liste) ; TMDB seulement en repli.
+    if (hit.poster_path && !(m.stream_icon || m.cover)) cover.innerHTML = `<img src="${TMDB_IMG}w342${hit.poster_path}">`;
     const det = await ktvTmdbDetails('movie', hit.id);
     if (ktvCurMovie !== m) return;
     const info = det || hit;
