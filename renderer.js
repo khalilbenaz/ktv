@@ -389,6 +389,7 @@ function channelCard(c, epgLazy) {
 
   const now = document.createElement('div');
   now.className = 'cc-now'; now.dataset.epg = c.stream_id;
+  if (epgLazy) now.innerHTML = '<span class="cc-prog muted">⏳ …</span>';   // placeholder de chargement
   card.appendChild(now);
 
   card.onclick = () => play(c);
@@ -426,7 +427,7 @@ async function fillCardEpg(card) {
   if (!slot) return;
   const ch = (state.channels || []).find((c) => c.stream_id == id) || { stream_id: id };
   const e = await getChannelEpg(ch);
-  if (!e || (!e.cur && !e.next)) return;
+  if (!e || (!e.cur && !e.next)) { slot.innerHTML = ''; return; }   // pas d'EPG → retire le placeholder
   if (e.cur) {
     slot.innerHTML = `<span class="cc-prog">▶ ${escapeHtml(e.cur.title)}</span>`;
     if (e.cur.en > e.cur.st) {
@@ -1203,14 +1204,17 @@ function buildHero(item) {
   const plot = document.createElement('p'); plot.className = 'hero-plot';
   info.appendChild(plot);
 
-  // Chaîne live : affiche le programme EPG en cours (et le suivant) dans le hero.
+  // Chaîne live : programme EPG en cours (titre + description) + suivant.
   if (live) {
+    plot.textContent = '⏳ Chargement du programme…';
     getChannelEpg({ stream_id: item.id, name: item.name }).then((e) => {
-      if (!e) return;
-      let t = e.cur ? '▶ ' + e.cur.title : '';
-      if (e.next) t += (t ? '   ·   ⏭ ' : '⏭ ') + e.next.title;
-      if (t) plot.textContent = t;
-    }).catch(() => {});
+      if (!e || !e.cur) { plot.textContent = ''; return; }
+      let t = '▶ ' + e.cur.title;
+      if (e.cur.desc) t += ' — ' + e.cur.desc;
+      if (e.next) t += `\n⏭ ${e.next.title}`;
+      plot.textContent = t;
+      plot.style.whiteSpace = 'pre-line';
+    }).catch(() => { plot.textContent = ''; });
   }
 
   const btns = document.createElement('div'); btns.className = 'hero-btns';
@@ -1306,7 +1310,7 @@ async function getChannelEpg(channel) {
   if (!channel._noXtreamEpg) try {
     const data = await xtreamApi('action=get_short_epg&stream_id=' + channel.stream_id + '&limit=6');
     const items = (((data && data.epg_listings) || [])
-      .map((x) => ({ title: decodeEpg(x.title), st: Number(x.start_timestamp) || 0, en: Number(x.stop_timestamp) || 0 }))
+      .map((x) => ({ title: decodeEpg(x.title), desc: decodeEpg(x.description || ''), st: Number(x.start_timestamp) || 0, en: Number(x.stop_timestamp) || 0 }))
       .filter((p) => p.title && p.st).sort((a, b) => a.st - b.st));
     if (items.length) {
       const now = Date.now() / 1000;
