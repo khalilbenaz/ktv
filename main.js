@@ -308,8 +308,10 @@ async function buildXmltv(sources) {
       const tm = /<title[^>]*>([^<]*)</.exec(m[2]);
       const title = tm ? decodeEntities(tm[1]).trim() : '';
       if (!title || !st) continue;
+      const dm = /<desc[^>]*>([\s\S]*?)<\/desc>/.exec(m[2]);
+      const desc = dm ? decodeEntities(dm[1]).replace(/<[^>]+>/g, '').trim() : '';
       if (!progs.has(id)) progs.set(id, []);
-      progs.get(id).push({ title, st, en });
+      progs.get(id).push({ title, desc, st, en });
     }
   }
   const index = new Map();      // nom normalisé -> [{id,pl}]
