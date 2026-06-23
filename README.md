@@ -10,6 +10,11 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** et **Windows (x64)** —
 
 ## Fonctionnalités
 
+### ✨ Nouveautés v1.9.2 — corrections Windows
+- **Icône d'application Windows** : `.ico` dédiée (16→256 px) au lieu de l'icône Electron par défaut, dans la barre des tâches et sur l'exécutable.
+- **Barres de défilement masquées** : plus de scrollbars horizontales visibles sur les rangées (Films, Séries, EPG…) — rendu *overlay* façon macOS, le défilement reste actif.
+- **Reprise de lecture des films enfin fiable** : la position est désormais sauvegardée même quand le flux VOD ne renseigne pas sa durée (fallback sur la plage *seekable*), donc la **barre de progression** et le **temps restant** s'affichent dans *Reprendre la lecture*.
+
 ### ✨ Nouveautés v1.9.1
 - **Bouton « ⏪ Revoir » redessiné** dans le lecteur : style cohérent avec le langage premium (teinte indigo dédiée au catch-up), survol en dégradé plein avec ombre colorée et micro-animation de rembobinage de l'icône.
 
