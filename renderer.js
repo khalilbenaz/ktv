@@ -81,8 +81,23 @@ function setWatched(key, on) {
   if (!state.watched) state.watched = {};
   if (on) state.watched[key] = Date.now(); else delete state.watched[key];
   saveWatched();
+  syncWatchedUI(key);   // met à jour TOUTES les affiches de cet élément à l'écran
 }
 function toggleWatched(key) { setWatched(key, !isWatched(key)); }
+// Repeint un bouton « vu » d'affiche selon l'état réel (data-wkey).
+function paintPosterWatch(wb) {
+  const on = isWatched(wb.dataset.wkey);
+  wb.textContent = on ? '✓ Vu' : '✓';
+  wb.classList.toggle('on', on);
+  wb.title = on ? 'Marquer comme non vu' : 'Marquer comme vu';
+  const card = wb.closest('.poster'); if (card) card.classList.toggle('is-watched', on);
+}
+// Synchronise toutes les UI « vu » d'une même clé (affiches multiples, épisodes).
+function syncWatchedUI(key) {
+  document.querySelectorAll('.p-watch').forEach((wb) => { if (wb.dataset.wkey === key) paintPosterWatch(wb); });
+  document.querySelectorAll('.ep-watch').forEach((ew) => { if (ew.dataset.wkey === key) { const on = isWatched(key); ew.textContent = on ? '✓' : '☆'; ew.classList.toggle('on', on); } });
+}
+function isSeasonWatched(eps) { return !!(eps && eps.length && eps.every((ep) => isWatched('series:' + ep.id))); }
 function isSeasonWatched(eps) { return !!(eps && eps.length && eps.every((ep) => isWatched('series:' + ep.id))); }
 function toggleFav(ch) {
   if (isFav(ch.stream_id)) state.favs = state.favs.filter((f) => f.stream_id != ch.stream_id);
@@ -869,11 +884,11 @@ function renderEpisodes(season) {
     const ew = document.createElement('button');
     const ewKey = 'series:' + ep.id;
     const setEw = () => { const on = isWatched(ewKey); ew.textContent = on ? '✓' : '☆'; ew.classList.toggle('on', on); };
-    ew.className = 'ep-watch'; ew.title = 'Marquer comme vu'; setEw();
+    ew.className = 'ep-watch'; ew.dataset.wkey = ewKey; ew.title = 'Marquer comme vu'; setEw();
     ew.onclick = (ev) => {
       ev.stopPropagation();
       const on = !isWatched(ewKey);
-      toggleWatched(ewKey); setEw();
+      setWatched(ewKey, on);   // synchronise (et le ✓ saison se mettra à jour au prochain rendu)
       if (typeof ktvTraktSetWatched === 'function') ktvTraktSetWatched({ type: 'episode', showTitle: curSeries.name, season: Number(season), episode: Number(ep.episode_num), tmdbId: curSeries && curSeries._tmdbId }, on);
     };
     const play = document.createElement('span');
@@ -954,13 +969,13 @@ function posterCard({ title, cover, rating, onClick, onDownload, tmdb, progress,
   }
   if (progress && progress > 0) img.appendChild(progressBar('p-prog', progress));
   if (watchedKey) {
-    const setWb = (wb) => { const on = isWatched(watchedKey); wb.classList.toggle('on', on); wb.textContent = on ? '✓ Vu' : '✓'; wb.title = on ? 'Marquer comme non vu' : 'Marquer comme vu'; card.classList.toggle('is-watched', on); };
     const wb = document.createElement('button');
     wb.className = 'p-watch';
+    wb.dataset.wkey = watchedKey;
     wb.onclick = (ev) => {
       ev.stopPropagation();
       const nowOn = !isWatched(watchedKey);
-      toggleWatched(watchedKey); setWb(wb);
+      setWatched(watchedKey, nowOn);   // synchronise toutes les instances affichées
       // Synchro Trakt (film ou série entière) — on résout d'abord l'ID TMDB exact
       // (sinon Trakt peut apparier le mauvais titre, ex. une autre « Mentalist »).
       if (tmdb && typeof ktvTraktSetWatched === 'function') {
@@ -970,7 +985,7 @@ function posterCard({ title, cover, rating, onClick, onDownload, tmdb, progress,
         else sync(null);
       }
     };
-    img.appendChild(wb); setWb(wb);
+    img.appendChild(wb); paintPosterWatch(wb);
   }
   const t = document.createElement('div');
   t.className = 'p-title'; t.textContent = title || '—';
