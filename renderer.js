@@ -1049,15 +1049,35 @@ function renderHomeDynamic(dyn) {
   }));
 }
 
-// Vue Historique : tout le « vu récemment » (jusqu'à 100), reprise rapide.
+// Vue Historique : tout le « vu récemment » (jusqu'à 100), reprise rapide,
+// chargement progressif (infinite loading) par lots.
+let historyObs = null;
 function buildHistory() {
   const grid = $('historyGrid');
   if (!grid) return;
+  if (historyObs) { historyObs.disconnect(); historyObs = null; }
   grid.innerHTML = '';
   if (!state.recent.length) { grid.innerHTML = '<p class="muted">Aucun historique pour le moment.</p>'; return; }
-  const frag = document.createDocumentFragment();
-  state.recent.forEach((r) => frag.appendChild(recentCard(r)));
-  grid.appendChild(frag);
+  const BATCH = 24;
+  let shown = 0;
+  const sentinel = document.createElement('div');
+  sentinel.style.cssText = 'grid-column:1/-1;height:1px;';
+  const renderMore = () => {
+    const frag = document.createDocumentFragment();
+    state.recent.slice(shown, shown + BATCH).forEach((r) => frag.appendChild(recentCard(r)));
+    grid.insertBefore(frag, sentinel);
+    shown += BATCH;
+    if (shown >= state.recent.length && historyObs) historyObs.disconnect();
+    if (typeof ktvWireHoverPreview === 'function') ktvWireHoverPreview();   // aperçu au survol
+  };
+  grid.appendChild(sentinel);
+  renderMore();
+  if ('IntersectionObserver' in window) {
+    historyObs = new IntersectionObserver((es) => {
+      if (es[0].isIntersecting && shown < state.recent.length) renderMore();
+    }, { rootMargin: '300px' });
+    historyObs.observe(sentinel);
+  }
 }
 
 function buildHome() {

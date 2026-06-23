@@ -1088,6 +1088,7 @@ function ktvWireHoverPreview() {
     document.getElementById('liveGrid'),
     document.getElementById('liveFavRail'),
     document.getElementById('homeRows'),
+    document.getElementById('historyGrid'),
   ].filter(Boolean);
   zones.forEach((z) => {
     if (z._cpWired) return;
