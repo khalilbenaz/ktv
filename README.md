@@ -20,6 +20,12 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** et **Windows (x64)** —
 
 ## Fonctionnalités
 
+### ✨ Nouveautés v1.12.2
+- **Programme en cours fiabilisé** : affiché même quand la grille du fournisseur a un trou (ex. TF1 affichait « En direct » sans programme) — repli automatique sur le XMLTV pour combler le programme du moment.
+
+### ✨ Nouveautés v1.12.1
+- **Historique** en **pleine largeur** + **chargement progressif** (infinite loading) + **aperçu de chaîne au survol** (avec son).
+
 ### ✨ Nouveautés v1.12.0
 - **Rappels de programme** : bouton **🔔 Me rappeler** sur les programmes à venir du Guide TV → notification système à l'heure de début (clic = ouvre la chaîne). Réactivés automatiquement au lancement.
 - **Historique de visionnage** : nouvel onglet **🕘 Historique** (jusqu'à 100 entrées) avec reprise rapide et bouton *Vider*. La rangée « Reprendre la lecture » propose *tout voir ›*.
