@@ -102,101 +102,20 @@
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
   }
 
-  // --- overlay sur le player : carte flottante déplaçable --------------------
-  let ov;
-  function ensureOverlay() {
-    if (ov) return ov;
-    ov = el('div', 'sc-overlay hidden');               // calque non bloquant (la vidéo reste cliquable)
-    ov.innerHTML = `<div class="sc-float">
-      <div class="sc-float-head" id="scOvHead">
-        <span class="sc-float-title">⚽ Match Center</span>
-        <button id="scOvMin" class="icon-btn" title="Réduire / agrandir">▭</button>
-        <button id="scOvClose" class="icon-btn" title="Fermer">✕</button>
-      </div>
-      <div class="sc-float-body">
-        <div class="sc-searchbar"><input id="scOvQuery" type="text" placeholder="Match ? ex: Maroc ou URL…"/><button id="scOvBtn" class="btn">OK</button></div>
-        <div id="scOvResults" class="sc-results"></div>
-        <div id="scOvDetail" class="sc-detail"></div>
-      </div>
-    </div>`;
-    document.body.appendChild(ov);
-    const float = ov.querySelector('.sc-float');
-    // Position mémorisée (coin haut-droit par défaut).
-    try { const p = JSON.parse(localStorage.getItem('scFloatPos') || 'null'); if (p) { float.style.left = p.left; float.style.top = p.top; float.style.right = 'auto'; } } catch (_) {}
-    if (localStorage.getItem('scFloatMin') === '1') float.classList.add('sc-min');
-
-    ov.querySelector('#scOvClose').onclick = () => ov.classList.add('hidden');
-    ov.querySelector('#scOvMin').onclick = () => {
-      const m = float.classList.toggle('sc-min');
-      localStorage.setItem('scFloatMin', m ? '1' : '0');
-    };
-
-    // Déplacement par la barre de titre.
-    const head = ov.querySelector('#scOvHead');
-    let drag = null;
-    head.addEventListener('mousedown', (e) => {
-      const r = float.getBoundingClientRect();
-      drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
-      e.preventDefault();
-    });
-    window.addEventListener('mousemove', (e) => {
-      if (!drag) return;
-      const x = Math.max(4, Math.min(window.innerWidth - 80, e.clientX - drag.dx));
-      const y = Math.max(4, Math.min(window.innerHeight - 40, e.clientY - drag.dy));
-      float.style.left = x + 'px'; float.style.top = y + 'px'; float.style.right = 'auto';
-    });
-    window.addEventListener('mouseup', () => {
-      if (drag) { localStorage.setItem('scFloatPos', JSON.stringify({ left: float.style.left, top: float.style.top })); drag = null; }
-    });
-
-    const input = ov.querySelector('#scOvQuery'), results = ov.querySelector('#scOvResults'), detail = ov.querySelector('#scOvDetail');
-    const pick = async (ev) => {
-      detail.innerHTML = '<div class="sc-empty">Chargement…</div>'; results.innerHTML = '';
-      try { const full = await api.sofaMatch(ev.url || ev.id); renderDetail(detail, full); }
-      catch (e) { detail.innerHTML = '<div class="sc-empty">Erreur : ' + esc(e.message) + '</div>'; }
-    };
-    const run = async () => {
-      const q = input.value.trim(); if (!q) return;
-      results.innerHTML = '<div class="sc-empty">Recherche…</div>'; detail.innerHTML = '';
-      try { const data = await api.sofaSearch(q); renderResults(results, data, pick); if (data.events && data.events.length === 1) pick(data.events[0]); }
-      catch (e) { results.innerHTML = '<div class="sc-empty">Erreur : ' + esc(e.message) + '</div>'; }
-    };
-    ov.querySelector('#scOvBtn').onclick = run;
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
-    return ov;
+  // --- activation du menu Sport (réglage) ------------------------------------
+  // Le menu Foot ne s'affiche que si activé dans les Réglages.
+  function sportEnabled() {
+    try { return JSON.parse(localStorage.getItem('ktv_settings') || '{}').sportEnabled === true; }
+    catch (_) { return false; }
   }
-  function toggleOverlay() {
-    const o = ensureOverlay();
-    o.classList.toggle('hidden');
-    if (!o.classList.contains('hidden')) {
-      const i = o.querySelector('#scOvQuery');
-      if (i) {
-        // Pré-remplit avec le programme EPG en cours s'il ressemble à un match (contient un séparateur).
-        const hint = window._scEpgTitle || '';
-        if (!i.value && /[-–:vV] | vs /.test(hint)) i.value = hint;
-        i.focus(); i.select();
-      }
-    }
-  }
-
-  // --- détection chaîne sportive --------------------------------------------
-  // Couvre les nommages courants des bouquets (FR/EN/AR) de catégories & chaînes.
-  const SPORT_RE = /\b(sport|sports|bein|be\s?in|espn|dazn|eurosport|canal\+?\s*sport|sky\s*spo|ssc|supersport|tnt\s*sport|football|foot|soccer|rugby|tennis|basket|nba|nfl|nhl|mlb|f1|formula|moto\s?gp|ufc|mma|boxe|boxing|premier\s*league|la\s*liga|serie\s*a|bundesliga|ligue\s*1|champions|uefa|caf|fifa|astro\s*supersport|fanatik|match\b|s[-\s]?sport)\b/i;
-  function isSport(channel, catName) {
-    return SPORT_RE.test(catName || '') || SPORT_RE.test((channel && channel.name) || '');
-  }
-  // Appelé par renderer.play() : montre ⚽ seulement sur le sport et mémorise un
-  // pré-remplissage de recherche (nom de chaîne nettoyé) pour l'overlay.
-  window.ktvUpdateMatchBtn = function (channel, catName) {
-    const btn = $('btnMatch'); if (!btn) return;
-    if (isSport(channel, catName)) {
-      btn.classList.remove('hidden');
-      const raw = (channel && channel.name) || '';
-      // Retire les préfixes type "BEIN SPORTS 1 HD :" pour proposer une requête utile.
-      window._scSuggest = raw.replace(/\b(hd|fhd|4k|uhd|sd|vip|fr|ar|en)\b/gi, '').replace(/[|:\-•]+/g, ' ').replace(/\s+/g, ' ').trim();
-    } else {
-      btn.classList.add('hidden');
-      window._scSuggest = '';
+  window.ktvApplySportSetting = function () {
+    const on = sportEnabled();
+    const nav = document.querySelector('.rail .nav[data-view="sport"]');
+    if (nav) nav.classList.toggle('hidden', !on);
+    // Si on désactive alors qu'on est sur l'onglet Sport, on repart à l'accueil.
+    if (!on && typeof showView === 'function') {
+      const cur = document.querySelector('.view.active');
+      if (cur && cur.id === 'view-sport') showView('home');
     }
   };
 
@@ -219,11 +138,7 @@
   function boot() {
     const nav = document.querySelector('.rail .nav[data-view="sport"]');
     if (nav) nav.addEventListener('click', () => setTimeout(initTab, 0));
-    const btn = $('btnMatch');
-    if (btn) btn.addEventListener('click', toggleOverlay);
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && ov && !ov.classList.contains('hidden')) ov.classList.add('hidden');
-    });
+    window.ktvApplySportSetting();   // masque/affiche le menu Sport selon le réglage
     if (api.onUpdateProgress) api.onUpdateProgress(updateProgress);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

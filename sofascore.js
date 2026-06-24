@@ -170,8 +170,8 @@ async function search(q) {
   const scored = [];
   for (const r of rows) {
     if (r.status !== 'live') continue; // matchs en direct uniquement
-    const toks = (r.slug || '').split('-').map(norm).filter(Boolean);
-    if (toks.some((tok) => /^[0-9a-f]{8,}$/.test(tok))) continue; // slug obfusqué (match sans nom public)
+    const toks = rowTokens(r);
+    if (!toks.length) continue;
     let score = 0;
     for (const t of termList) {
       if (t.length < 3) continue;
@@ -181,17 +181,33 @@ async function search(q) {
   }
   scored.sort((a, b) => b.score - a.score);
 
-  const events = scored.slice(0, 25).map(({ r }) => {
-    const parts = (r.slug || '').split('-');
-    const mid = Math.ceil(parts.length / 2);
-    return {
-      id: r.id, url: ORIGIN + r.href.split('#')[0],
-      homeTeam: { name: title(parts.slice(0, mid).join(' ')) },
-      awayTeam: { name: title(parts.slice(mid).join(' ')) },
-      status: r.status === 'live' ? { type: 'inprogress' } : (r.status === 'upcoming' ? { type: 'notstarted' } : null)
-    };
-  });
-  return { events };
+  return { events: scored.slice(0, 25).map(({ r }) => rowToEvent(r)) };
+}
+
+// Tokens normalisés d'un match (noms réels + slug) pour le filtrage.
+function rowTokens(r) {
+  const toks = [];
+  (r.home + ' ' + r.away).split(/\s+/).forEach((w) => { const n = norm(w); if (n) toks.push(n); });
+  (r.slug || '').split('-').forEach((w) => { const n = norm(w); if (n && !/^[0-9a-f]{8,}$/.test(n)) toks.push(n); });
+  return toks;
+}
+
+// Construit un event léger depuis une ligne de feed (vrais noms ordonnés si dispo).
+function rowToEvent(r) {
+  const parts = (r.slug || '').split('-');
+  const mid = Math.ceil(parts.length / 2);
+  return {
+    id: r.id, url: ORIGIN + r.href.split('#')[0],
+    homeTeam: { name: r.home || title(parts.slice(0, mid).join(' ')) },
+    awayTeam: { name: r.away || title(parts.slice(mid).join(' ')) },
+    status: r.status === 'live' ? { type: 'inprogress' } : (r.status === 'upcoming' ? { type: 'notstarted' } : null)
+  };
+}
+
+// Tous les matchs actuellement en direct (sans recherche) — pour l'overlay du lecteur.
+async function liveMatches() {
+  const rows = await fetchFeed();
+  return { events: rows.filter((r) => r.status === 'live' && rowTokens(r).length).map(rowToEvent) };
 }
 
 // Liste des matchs du feed (page d'accueil) : [{id, slug, href}], cache 2 min.
@@ -218,7 +234,9 @@ async function fetchFeed() {
       const id = idm ? Number(idm[1]) : null;
       if (!id || seen.has(id)) return; seen.add(id);
       const slugm = href.match(/\\/match\\/([^/]+)\\//);
-      out.push({ id, href, slug: slugm ? slugm[1] : '', status: statusOf((a.textContent || '').replace(/\\s+/g, ' ')) });
+      // Les alt d'images donnent les vrais noms d'équipes dans l'ordre domicile/extérieur.
+      const names = [...a.querySelectorAll('img[alt]')].map((i) => i.alt).filter(Boolean);
+      out.push({ id, href, slug: slugm ? slugm[1] : '', status: statusOf((a.textContent || '').replace(/\\s+/g, ' ')), home: names[0] || '', away: names[1] || '' });
     });
     return out;
   })()`;
@@ -290,4 +308,4 @@ function dispose() {
   winPromise = null; cache.clear();
 }
 
-module.exports = { parseEventId, search, getMatch, getStats, getLineups, getTeamForm, dispose };
+module.exports = { parseEventId, search, liveMatches, getMatch, getStats, getLineups, getTeamForm, dispose };
