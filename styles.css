@@ -925,8 +925,9 @@ input[type="datetime-local"], #schDur {
 /* ===== Match Center v3 : largeur onglet + overlay flottant déplaçable ===== */
 /* Onglet Sport : utilise davantage la largeur, résultats en grille */
 #view-sport .view-panel { max-width: 1080px; }
-#view-sport .sc-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; max-width: none; margin: 0; }
-#view-sport .sc-detail, #view-sport .sc-detail-head, #view-sport .sc-timeline, #view-sport .sc-sec-title { max-width: 760px; }
+#view-sport .sc-results { display: flex; flex-direction: column; gap: 10px; max-width: none; margin: 0; }
+#view-sport .sc-card { padding: 16px 18px; }
+#view-sport .sc-detail, #view-sport .sc-detail-head, #view-sport .sc-timeline, #view-sport .sc-sec-title { max-width: none; }
 
 /* Overlay = calque non bloquant (la vidéo reste visible et cliquable) */
 .sc-overlay { position: fixed; inset: 0; background: transparent; backdrop-filter: none; pointer-events: none; display: block; z-index: 9999; }
