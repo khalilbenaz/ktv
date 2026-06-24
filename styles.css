@@ -945,3 +945,8 @@ input[type="datetime-local"], #schDur {
 
 /* libellé VAR */
 .sc-var { color: #5aa9e6; font-weight: 600; }
+
+/* Carte flottante : champ de recherche lisible (texte saisi visible) */
+.sc-float .sc-searchbar input { background: rgba(255,255,255,.1); color: #fff; border-color: rgba(255,255,255,.2); }
+.sc-float .sc-searchbar input::placeholder { color: rgba(255,255,255,.55); }
+.sc-float .sc-empty { color: rgba(255,255,255,.6); }
