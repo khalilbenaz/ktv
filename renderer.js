@@ -232,9 +232,17 @@ function apiBase() { return state.srv.replace(/\/+$/, ''); }
 
 async function xtreamApi(params) {
   const url = `${apiBase()}/player_api.php?username=${encodeURIComponent(state.usr)}&password=${encodeURIComponent(state.pwd)}&${params}`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  return r.json();
+  // Timeout : sans ça un fournisseur lent/HS laisse la requête pendre indéfiniment
+  // (catalogue figé sur « Chargement… »). 30 s couvre les gros get_vod_streams.
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 30000);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } finally {
+    clearTimeout(to);
+  }
 }
 
 function detectQuality(name) {
@@ -518,12 +526,18 @@ async function fillCardEpg(card) {
 /* ---------- FILMS (VOD) ---------- */
 // Charge films FR (catégories + streams) une seule fois.
 async function loadVodData() {
-  if (state.vod) return;
+  // On ne garde le cache que s'il contient réellement des films : un résultat vide
+  // (hoquet de connexion) ne doit pas rester figé jusqu'au redémarrage → on retente
+  // au prochain passage.
+  if (state.vod && state.vod.length) return;
   const cats = await xtreamApi('action=get_vod_categories');
   state.vodCats = (Array.isArray(cats) ? cats : []).filter((c) => frCategoryAllowed(c.category_name));
   const allowed = new Set(state.vodCats.map((c) => String(c.category_id)));
   const list = await xtreamApi('action=get_vod_streams');
-  state.vod = (Array.isArray(list) ? list : []).filter((m) => allowed.has(String(m.category_id)));
+  // Réponse non-tableau = erreur fournisseur : on jette pour déclencher un retry au
+  // lieu de mettre en cache une liste vide.
+  if (!Array.isArray(list)) throw new Error('Catalogue films indisponible (réponse fournisseur invalide)');
+  state.vod = list.filter((m) => allowed.has(String(m.category_id)));
   if (typeof ktvTraktApplyWatched === 'function') ktvTraktApplyWatched();   // marque vus depuis Trakt
 }
 
@@ -772,12 +786,13 @@ function playMovie(m) {
 /* ---------- SÉRIES ---------- */
 // Charge séries FR (catégories + liste) une seule fois.
 async function loadSeriesData() {
-  if (state.series) return;
+  if (state.series && state.series.length) return;
   const cats = await xtreamApi('action=get_series_categories');
   state.seriesCats = (Array.isArray(cats) ? cats : []).filter((c) => frCategoryAllowed(c.category_name));
   const allowed = new Set(state.seriesCats.map((c) => String(c.category_id)));
   const list = await xtreamApi('action=get_series');
-  state.series = (Array.isArray(list) ? list : []).filter((s) => allowed.has(String(s.category_id)));
+  if (!Array.isArray(list)) throw new Error('Catalogue séries indisponible (réponse fournisseur invalide)');
+  state.series = list.filter((s) => allowed.has(String(s.category_id)));
 }
 
 async function ensureSeries() {
@@ -1291,7 +1306,11 @@ async function seeAll(c) {
 
 async function fillHomeContent(moviesRow, seriesRow) {
   try {
-    await loadVodData();
+    // Le catalogue films (get_vod_streams) est la plus grosse requête : un hoquet
+    // réseau/fournisseur la fait échouer. On retente une fois avant d'abandonner
+    // la rangée pour éviter qu'elle disparaisse sur une erreur passagère.
+    try { await loadVodData(); }
+    catch { await new Promise((r) => setTimeout(r, 1200)); await loadVodData(); }
     const recent = [...(state.vod || [])].sort((a, b) => (Number(b.added) || 0) - (Number(a.added) || 0)).slice(0, 18);
     if (recent.length) setRowCards(moviesRow, recent.map((m) => posterCard({ title: m.name, cover: m.stream_icon || m.cover, rating: m.rating, progress: resumeProgress('movie:' + m.stream_id), remaining: resumeRemaining('movie:' + m.stream_id), watchedKey: 'movie:' + m.stream_id, onClick: () => (typeof ktvOpenMovie === 'function' ? ktvOpenMovie(m) : playMovie(m)), tmdb: { type: 'movie', title: m.name, year: (typeof yearOf === 'function' ? yearOf(m.name) : '') } })));
     else moviesRow.remove();

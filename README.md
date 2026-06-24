@@ -20,6 +20,11 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** et **Windows (x64)** —
 
 ## Fonctionnalités
 
+### ✨ Nouveautés v1.15.4 — chargement catalogue résilient
+- **Catalogue films/séries auto-réparant** : un hoquet de connexion au fournisseur ne laisse plus la page sur « Aucun film » jusqu'au redémarrage — le catalogue est automatiquement retenté au passage suivant (le cache vide n'est plus mémorisé).
+- **Timeout réseau (30 s)** sur les appels API : une requête qui pend (fournisseur lent/HS) échoue proprement au lieu de figer le chargement.
+- **Rangée « Films » de l'accueil** : retry automatique avant d'abandonner la rangée.
+
 ### ✨ Nouveautés v1.15.3
 - **« Vu » synchronisé** sur toutes les affiches d'un même contenu (plus de désynchronisation entre rangées/écrans).
 
