@@ -169,7 +169,7 @@ async function search(q) {
   // Filtrage + score (nb de termes correspondant à une équipe).
   const scored = [];
   for (const r of rows) {
-    if (r.status === 'finished' || r.status === 'canceled') continue; // on n'affiche pas les matchs terminés/annulés
+    if (r.status !== 'live') continue; // matchs en direct uniquement
     const toks = (r.slug || '').split('-').map(norm).filter(Boolean);
     if (toks.some((tok) => /^[0-9a-f]{8,}$/.test(tok))) continue; // slug obfusqué (match sans nom public)
     let score = 0;
@@ -179,8 +179,7 @@ async function search(q) {
     }
     if (score > 0) scored.push({ r, score });
   }
-  // Live d'abord, puis par pertinence.
-  scored.sort((a, b) => (b.r.status === 'live') - (a.r.status === 'live') || b.score - a.score);
+  scored.sort((a, b) => b.score - a.score);
 
   const events = scored.slice(0, 25).map(({ r }) => {
     const parts = (r.slug || '').split('-');

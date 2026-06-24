@@ -38,7 +38,7 @@
   function renderResults(box, data, onPick) {
     box.innerHTML = '';
     const events = (data && data.events) || [];
-    if (!events.length) { box.innerHTML = '<div class="sc-empty">Aucun match trouvé.<br>Essaie un autre nom, ou colle l’URL Sofascore du match.</div>'; return; }
+    if (!events.length) { box.innerHTML = '<div class="sc-empty">Aucun match <b>en direct</b> pour cette recherche.<br>Colle l’URL Sofascore pour ouvrir un match précis.</div>'; return; }
     events.forEach((ev) => {
       const c = el('div', 'sc-card');
       c.innerHTML = matchHeader(ev);
