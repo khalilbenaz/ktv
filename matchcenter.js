@@ -17,7 +17,7 @@
   }
   function statusBadge(ev) {
     const t = ev.status && ev.status.type;
-    if (t === 'inprogress') return '<span class="sc-live">● LIVE</span>';
+    if (t === 'inprogress') return '<span class="sc-live">● ' + esc(ev.liveClock || 'LIVE') + '</span>';
     if (t === 'finished') return '<span class="sc-fin">Terminé</span>';
     if (t === 'notstarted' && !ev.startTimestamp) return '<span class="sc-up">À venir</span>';
     if (ev.startTimestamp) {
@@ -57,6 +57,23 @@
     const head = el('div', 'sc-detail-head', matchHeader(ev) + (meta ? '<div class="sc-tourn">' + esc(meta) + '</div>' : ''));
     container.appendChild(head);
 
+    const isLive = ev.status && ev.status.type === 'inprogress';
+    // Match en direct : on affiche les buts LIVE (DOM, à jour) plutôt que les
+    // faits __NEXT_DATA__ (snapshot SSR souvent en retard).
+    if (isLive && match.liveGoals && match.liveGoals.length) {
+      container.appendChild(el('h4', 'sc-sec-title', '⚽ Buts (en direct) · 🔄 auto'));
+      const tl = el('div', 'sc-timeline');
+      match.liveGoals.slice().sort((a, b) => (b.minute + (b.added || 0) / 100) - (a.minute + (a.added || 0) / 100)).forEach((g) => {
+        const t = g.minute + "'" + (g.added ? '+' + g.added : '');
+        const note = g.note ? ' <span class="sc-assist">(' + esc(g.note) + ')</span>' : '';
+        const row = el('div', 'sc-ev-row');
+        row.innerHTML = `<span class="sc-ev-min">${esc(t)}</span><span class="sc-ev-ico">⚽</span><span class="sc-ev-txt">${esc(g.name)}${note}</span>`;
+        tl.appendChild(row);
+      });
+      container.appendChild(tl);
+      return;
+    }
+
     const incs = (match.incidents || []).filter((i) => i.incidentType !== 'period' && i.incidentType !== 'injuryTime');
     if (!incs.length) {
       container.appendChild(el('div', 'sc-empty', 'Pas encore de fait de match.'));
@@ -83,20 +100,44 @@
 
   // --- onglet Sport ----------------------------------------------------------
   let tabInit = false;
+  let refreshTimer = null;
+  function clearRefresh() { if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; } }
+
   function initTab() {
     if (tabInit) return; tabInit = true;
     const input = $('scQuery'), btn = $('scSearchBtn'), results = $('scResults'), detail = $('scDetail');
     if (!input) return;
-    const pick = async (ev) => {
-      detail.innerHTML = '<div class="sc-empty">Chargement du match…</div>';
-      try { const full = await api.sofaMatch(ev.url || ev.id); renderDetail(detail, full); detail.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-      catch (e) { detail.innerHTML = '<div class="sc-empty">Erreur : ' + esc(e.message) + '</div>'; }
+
+    // Charge un match dans le détail ; relance l'auto-refresh s'il est en direct.
+    const load = async (ref, opts) => {
+      const silent = opts && opts.silent;
+      if (!silent) detail.innerHTML = '<div class="sc-empty">Chargement du match…</div>';
+      try {
+        const full = await api.sofaMatch(ref);
+        renderDetail(detail, full);
+        if (!silent) detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const live = full.event && full.event.status && full.event.status.type === 'inprogress';
+        clearRefresh();
+        if (live) {
+          // Rafraîchit le score/buts toutes les 30 s tant que le match est en direct
+          // et qu'on reste sur l'onglet Sport.
+          refreshTimer = setInterval(() => {
+            const sportView = document.getElementById('view-sport');
+            if (!sportView || !sportView.classList.contains('active')) { clearRefresh(); return; }
+            load(ref, { silent: true });
+          }, 30000);
+        }
+      } catch (e) {
+        if (!silent) detail.innerHTML = '<div class="sc-empty">Erreur : ' + esc(e.message) + '</div>';
+      }
     };
+    const pick = (ev) => load(ev.url || ev.id);
     const run = async () => {
       const q = input.value.trim(); if (!q) return;
+      clearRefresh();
       results.innerHTML = '<div class="sc-empty">Recherche…</div>'; detail.innerHTML = '';
       try { const data = await api.sofaSearch(q); renderResults(results, data, pick); if (data.events && data.events.length === 1) pick(data.events[0]); }
-      catch (e) { results.innerHTML = '<div class="sc-empty">Erreur : ' + esc(e.message) + ' (Cloudflare bloque ? réessayez).</div>'; }
+      catch (e) { results.innerHTML = '<div class="sc-empty">Erreur : ' + esc(e.message) + '</div>'; }
     };
     btn.onclick = run;
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });

@@ -16,7 +16,7 @@ const { BrowserWindow } = require('electron');
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const ORIGIN = 'https://www.sofascore.com';
 
-const TTL_LIVE = 30 * 1000;
+const TTL_LIVE = 20 * 1000;
 const TTL_DONE = 24 * 60 * 60 * 1000;
 const TTL_SEARCH = 5 * 60 * 1000;
 
@@ -246,6 +246,33 @@ async function fetchFeed() {
   return rows;
 }
 
+// Lit le score/minute/buteurs LIVE depuis le DOM rendu (ancré sur les noms
+// d'équipes pour ne pas capter un autre match de la page).
+function liveExtract(w, home, away) {
+  if (!home || !away) return Promise.resolve(null);
+  const code = `(() => {
+    try {
+      const h = ${JSON.stringify(home)}, a = ${JSON.stringify(away)};
+      const lines = document.body.innerText.split('\\n').map((s) => s.trim());
+      const isClock = (s) => /^([0-9]{1,3}:[0-9]{2}|[0-9]{1,3}'(?:\\+[0-9]+)?|HT|FT|AET|Pen|Full Time|Half Time)$/.test(s);
+      const gline = /^(.{2,30}?)\\s+([0-9]{1,3})['’](?:\\s*\\+\\s*([0-9]+))?(?:\\s*\\(([^)]*)\\))?$/;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i] !== h) continue;
+        const sm = (lines[i + 1] || '').match(/^([0-9]{1,2})\\s*-\\s*([0-9]{1,2})$/);
+        if (!sm || !isClock(lines[i + 2] || '') || lines[i + 3] !== a) continue;
+        const goals = [];
+        for (let j = i + 4; j < Math.min(lines.length, i + 30); j++) {
+          const g = (lines[j] || '').match(gline);
+          if (g && !/^[0-9]/.test(g[1])) goals.push({ name: g[1].trim(), minute: +g[2], added: g[3] ? +g[3] : null, note: g[4] || '' });
+        }
+        return { h: +sm[1], a: +sm[2], clock: lines[i + 2], goals: goals.slice(0, 14) };
+      }
+      return null;
+    } catch (e) { return null; }
+  })()`;
+  return w.webContents.executeJavaScript(code, true).catch(() => null);
+}
+
 // Match complet : event (score & infos) + incidents (buts/cartons/rempl.).
 async function getMatch(input) {
   const url = matchUrl(input);
@@ -260,6 +287,23 @@ async function getMatch(input) {
     throw new Error('Extraction impossible' + (data && data.error ? ' (' + data.error + ')' : ''));
   }
   data.event.url = url;
+
+  // __NEXT_DATA__ est un snapshot SSR (figé, souvent en retard pour un match en
+  // cours). Les valeurs live arrivent dans le DOM après hydratation → on les lit
+  // et on écrase le score/minute si plus récents.
+  const ev = data.event;
+  await delay(6000); // laisser le header live s'hydrater
+  let live = await liveExtract(w, ev.homeTeam && ev.homeTeam.name, ev.awayTeam && ev.awayTeam.name);
+  if (!live) { await delay(2500); live = await liveExtract(w, ev.homeTeam && ev.homeTeam.name, ev.awayTeam && ev.awayTeam.name); }
+  if (live && live.h != null) {
+    ev.homeScore = { current: live.h };
+    ev.awayScore = { current: live.a };
+    ev.liveClock = live.clock || null;
+    if (/FT|full|AET|pen|ended|terminé/i.test(live.clock || '')) ev.status = { type: 'finished' };
+    else ev.status = { type: 'inprogress', description: live.clock || (ev.status && ev.status.description) };
+    if (live.goals && live.goals.length) data.liveGoals = live.goals;
+  }
+
   cache.set(key, { at: Date.now(), ttl: eventTtl(data.event), data });
   return data;
 }

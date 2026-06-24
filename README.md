@@ -20,6 +20,10 @@ Lecteur **Xtream Codes** pour **macOS (Apple Silicon)** et **Windows (x64)** —
 
 ## Fonctionnalités
 
+### ✨ Nouveautés v1.16.1 — scores en direct & auto-actualisation
+- **Score, minute et buts en temps réel** : lecture du DOM live de la page (le snapshot SSR était figé en début de match). Le score affiché correspond désormais au direct.
+- **Auto-actualisation** : tant qu'un match en direct est ouvert, score et buts se rafraîchissent automatiquement (~30 s).
+
 ### ✨ Nouveautés v1.16.0 — Match Center (Sport) & mise à jour automatique
 - **Onglet « ⚽ Sport » (optionnel)** : suivi des matchs **en direct** (données Sofascore via le navigateur intégré, sans clé API). Recherche par nom (alias FR→EN, ex. « maroc » → Morocco) ou URL Sofascore collée ; **score live, infos** (tournoi, stade, arbitre) et **faits du match** (buts + passeurs, cartons, remplacements, décisions VAR).
 - **Activation dans les Réglages** : le menu Sport n'apparaît que si l'option **« Activer le menu Sport »** est cochée (Réglages → ⚽ Sport). Désactivé par défaut.
